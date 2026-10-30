@@ -84,6 +84,10 @@ function renderHeader() {
   btn.classList.toggle('stop', !!scanning);
   $('showWindow').hidden = !scanning;
   $('captchaBanner').hidden = !paused;
+  const backoff = scanning && run.backoff ? run.backoff : 0;
+  $('slowBanner').hidden = !backoff || paused;
+  if (backoff) $('slowSec').textContent = Math.min(60, settings.intervalSec * 2 ** backoff);
+  if (backoff) $('everySec').textContent = Math.min(60, settings.intervalSec * 2 ** backoff);
 
   const tabs = scanning ? Object.values(run.tabs) : [];
   $('sScans').textContent = (run ? run.scans : 0).toLocaleString();
@@ -110,7 +114,7 @@ function renderHeader() {
     const d = document.createElement('div');
     d.className = 'pg ' + t.state;
     d.title = (t.error ? 'Error: ' + t.error + '\n' : '') + t.url;
-    const label = t.state === 'captcha' ? 'CAPTCHA' : t.state === 'error' ? 'error' : `${t.count} items`;
+    const label = t.state === 'captcha' ? 'CAPTCHA' : t.state === 'error' ? 'error' : t.state === 'throttled' ? 'Amazon busy' : `${t.count} items`;
     d.innerHTML = `<b>Page ${t.idx + 1}</b><span>${label}</span><br><span>${ago(t.lastScan)}</span>`;
     pages.appendChild(d);
   });

@@ -84,6 +84,8 @@ button { font: inherit; cursor: pointer; border-radius: 8px; }
 .pg.ok { border-left-color: var(--ok); }
 .pg.loading { border-left-color: var(--warn); }
 .pg.captcha, .pg.error { border-left-color: var(--bad); }
+.pg.throttled { border-left-color: var(--warn); }
+.banner.slow { background: color-mix(in srgb, var(--warn) 14%, var(--card)); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
 
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
 .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 10px 14px; color: var(--muted); font-weight: 600; }

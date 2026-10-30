@@ -1,7 +1,7 @@
 {
   "_readme": "The scanner downloads this file from GitHub every few minutes. Changing urls or rules here updates every installed scanner without reinstalling. Rules are CSS selectors and regular expressions only, never code.",
   "configVersion": 1,
-  "latestExtensionVersion": "1.8.0",
+  "latestExtensionVersion": "1.9.0",
   "updateUrl": "https://github.com/larrypro1234/liquidation-scanner/raw/main/dist/liquidation-scanner.zip",
   "notice": "",
   "urls": [
@@ -90,7 +90,7 @@
     "titlePattern": "^\\s*(?<units>\\d[\\d,]*)\\s*units?\\s*\\(\\s*est\\.?\\s*(?<pallets>[\\d.]+)\\s*pallets?\\s*\\)\\s*-\\s*(?<type>.+?)\\s*-\\s*(?<category>.+?)(?:\\s+lot)?\\s*$",
     "manifest": {
       "topN": 5,
-      "delayMs": 2500,
+      "delayMs": 5000,
       "tableSelector": "table, [role=\"table\"], [role=\"grid\"]",
       "tableHeaderPattern": "qty|quantity",
       "seeAllPattern": "see all\\s*\\((\\d+)\\)",
@@ -104,7 +104,9 @@
         "price": "item price|unit price|price per",
         "total": "total"
       }
-    }
+    },
+    "throttleTitle": "sorry! something went wrong",
+    "throttleText": "something went wrong on our end|dogs of amazon"
   },
   "performance": {
     "blockTypes": [

@@ -35,6 +35,12 @@
   <p id="updated" class="notice ok" hidden></p>
   <p id="notice" class="notice" hidden></p>
 
+  <div id="slowBanner" class="banner slow" hidden>
+    <strong>Amazon is asking us to slow down,</strong> so the scanner backed off by itself to every
+    <span id="slowSec"></span>s. It speeds back up after about 5 calm minutes. Manifest reading
+    waits a few minutes too.
+  </div>
+
   <div id="captchaBanner" class="banner" hidden>
     <strong>Amazon is asking for a CAPTCHA.</strong>
     Scanning is paused. Solve it in the scan window and scanning resumes by itself.

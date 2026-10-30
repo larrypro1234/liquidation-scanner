@@ -145,6 +145,12 @@ function scrapePage(rules) {
     out.captcha = true;
     return out;
   }
+  // Amazon's "SORRY, something went wrong on our end" dog page = rate limited.
+  const thrTitle = re(R.throttleTitle), thrText = re(R.throttleText);
+  if ((thrTitle && thrTitle.test(document.title)) || (thrText && thrText.test(bodyText.slice(0, 5000)))) {
+    out.throttled = true;
+    return out;
+  }
 
   const money = s => {
     if (!s) return null;
@@ -244,6 +250,10 @@ async function scrapeManifest(rules) {
   if (document.querySelector('form[action*="validateCaptcha"]') || /robot check/i.test(document.title) ||
       /not a robot|enter the characters you see/i.test(bodyText().slice(0, 5000))) {
     return { captcha: true };
+  }
+  const thr = rules && [re(rules.throttleTitle), re(rules.throttleText)];
+  if (thr && ((thr[0] && thr[0].test(document.title)) || (thr[1] && thr[1].test(bodyText().slice(0, 5000))))) {
+    return { throttled: true };
   }
 
   const cols = R.columns || {};

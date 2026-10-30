@@ -265,8 +265,43 @@ async function refreshTab(tabId) {
 
 async function intervalMs() {
   const s = (await mem()).settings;
-  const base = Math.max(1, Number(s.intervalSec) || 3) * 1000;
-  return Math.round(base * (0.9 + Math.random() * 0.2)); // small jitter so tabs don't sync up
+  const base = Math.max(1, Number(s.intervalSec) || 5) * 1000;
+  // Backed off after Amazon rate-limited us: x2 per step, at most 60 s.
+  const slowed = Math.min(MAX_BACKOFF_MS, base * 2 ** (run.backoff || 0));
+  return Math.round(Math.max(base, slowed) * (0.9 + Math.random() * 0.2)); // jitter so tabs don't sync up
+}
+
+// ---------- backing off when Amazon rate-limits ----------
+// Amazon answers too many requests with its "SORRY, something went wrong" dog
+// page. Each fresh hit doubles the refresh interval (5 → 10 → 20 → 40 → 60 s)
+// and pauses manifest reading; 5 calm minutes take it back down a step.
+
+const MAX_BACKOFF_MS = 60000;
+const BACKOFF_STEP_GAP_MS = 20000;   // at most one step up per 20 s
+const CALM_STEP_DOWN_MS = 5 * 60000;
+const MANIFEST_PAUSE_MS = 3 * 60000;
+
+function noteThrottle() {
+  const now = Date.now();
+  // Step up at most once per gap, so a burst of busy pages counts once but
+  // Amazon staying busy keeps slowing us further.
+  if (now - (run.lastBackoffStepAt || 0) > BACKOFF_STEP_GAP_MS) {
+    run.backoff = Math.min(4, (run.backoff || 0) + 1);
+    run.lastBackoffStepAt = now;
+  }
+  run.calmSince = now;
+  run.manifestPausedUntil = now + MANIFEST_PAUSE_MS;
+  saveRun();
+}
+
+function noteCalm() {
+  if (!run.backoff) return;
+  const now = Date.now();
+  if (now - (run.calmSince || now) >= CALM_STEP_DOWN_MS) {
+    run.backoff--;
+    run.calmSince = now;
+    saveRun();
+  }
 }
 
 async function onTabLoaded(tabId) {
@@ -288,7 +323,17 @@ async function onTabLoaded(tabId) {
 
   if (run.paused === 'captcha' && run.captchaTab === tabId) resume();
 
+  if (res && res.throttled) {
+    // Keep this page's last good listings; just wait longer before trying it again.
+    t.state = 'throttled';
+    noteThrottle();
+    if (!run.paused) scheduleNext(tabId, Math.round((await intervalMs()) * 1.5));
+    saveRun();
+    return;
+  }
+
   if (res) await handleScan(tabId, t, res);
+  if (res && res.items.length) noteCalm();
   t.state = t.error ? 'error' : 'ok';
   if (!run.paused) scheduleNext(tabId, await intervalMs());
   saveRun();
@@ -322,7 +367,9 @@ async function handleScan(tabId, t, res) {
     }
   }
 
-  m.listings[t.idx] = res.items;
+  // A page that suddenly comes back empty is far more likely a hiccup than a
+  // sold-out page, so keep what it showed last time.
+  if (res.items.length || !(m.listings[t.idx] || []).length) m.listings[t.idx] = res.items;
   t.count = res.items.length;
   t.lastScan = now;
   t.scans = (t.scans || 0) + 1;
@@ -434,6 +481,8 @@ async function pickManifestAsin() {
 async function nextManifest() {
   await ensureRun();
   if (!run.scanning || run.paused || run.manifestTab == null) return;
+  const wait = (run.manifestPausedUntil || 0) - Date.now();
+  if (wait > 0) return scheduleManifest(wait + 1000);
   const asin = await pickManifestAsin();
   if (!asin) return scheduleManifest(10000);
   manifestAsin = asin;
@@ -462,6 +511,11 @@ async function onManifestLoaded(tabId) {
   } catch {}
   if (res && res.captcha) return onCaptcha(tabId);
   if (run.paused === 'captcha' && run.captchaTab === tabId) resume();
+  if (res && res.throttled) {
+    noteThrottle();
+    manifestAsin = null;
+    return scheduleManifest(MANIFEST_PAUSE_MS);
+  }
 
   if (res && (res.found || res.heading === false)) {
     m.manifests[asin] = { ...res, at: Date.now() };
