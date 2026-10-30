@@ -152,19 +152,35 @@ function itemEl(it, { lead = false } = {}) {
   return el;
 }
 
+// New leads = every lot that isn't banned by the current filters. Drops caught
+// while scanning (NEW / PRICE DROP) go first, then everything else newest first.
+// Filters apply live, so banning a word removes matching lots straight away.
 function renderLeads() {
-  $('leadCount').textContent = leads.length;
+  const drops = new Map();
+  leads.forEach(l => { if (!drops.has(l.asin)) drops.set(l.asin, l); });
+  const onPages = new Map();
+  Object.values(listings).flat().forEach(it => { if (!onPages.has(it.asin)) onPages.set(it.asin, it); });
+
+  const items = [];
+  drops.forEach((l, asin) => items.push({ ...l, ...(onPages.get(asin) || {}), reason: l.reason, oldPrice: l.oldPrice, foundAt: l.foundAt, drop: true }));
+  onPages.forEach((it, asin) => { if (!drops.has(asin)) items.push(it); });
+  const shown = items.filter(it => passesFilters(it, settings));
+  shown.sort((a, b) => (b.drop ? 1 : 0) - (a.drop ? 1 : 0) || (b.foundAt || b.firstSeen || 0) - (a.foundAt || a.firstSeen || 0));
+
+  $('leadCount').textContent = shown.length;
   const box = $('leads');
   box.innerHTML = '';
-  if (!leads.length) {
-    box.innerHTML = `<div class="empty">${run && run.scanning
-      ? 'Watching for new drops… leads show up here the moment they appear.'
-      : 'Press <b>Start scanning</b> to open the pages and start watching for new drops.'}</div>`;
+  if (!shown.length) {
+    box.innerHTML = `<div class="empty">${items.length
+      ? 'Every lot on the pages is banned by your Settings filters.'
+      : run && run.scanning
+        ? 'Loading the pages…'
+        : 'Press <b>Start scanning</b> to open the pages and start watching for new drops.'}</div>`;
     return;
   }
-  leads.slice(0, 150).forEach(l => {
-    const el = itemEl(l, { lead: true });
-    if (freshAsins.has(l.asin + l.foundAt)) el.classList.add('fresh');
+  shown.slice(0, 400).forEach(it => {
+    const el = itemEl(it, { lead: !!it.drop });
+    if (it.drop && freshAsins.has(it.asin + it.foundAt)) el.classList.add('fresh');
     box.appendChild(el);
   });
   freshAsins.clear();
@@ -289,10 +305,15 @@ chrome.storage.onChanged.addListener((ch, area) => {
     listings = ch.listings.newValue || {};
     // Don't re-render the big list while the user is scrolling through it every second.
     clearTimeout(listingsT);
-    listingsT = setTimeout(renderListings, 400);
+    listingsT = setTimeout(() => { renderListings(); renderLeads(); }, 400);
   }
   if (area === 'local' && ch.leads) { leads = ch.leads.newValue || []; renderLeads(); }
-  if (area === 'local' && ch.settings) { settings = { ...DEFAULT_SETTINGS, ...(ch.settings.newValue || {}) }; renderHeader(); }
+  if (area === 'local' && ch.settings) {
+    settings = { ...DEFAULT_SETTINGS, ...(ch.settings.newValue || {}) };
+    renderHeader();
+    renderLeads();
+    renderListings();
+  }
   if (area === 'local' && ch.configCheck) { configCheck = ch.configCheck.newValue || null; renderUpdateInfo(); }
   if (area === 'local' && ch.outdatedSince) { outdatedSince = ch.outdatedSince.newValue || null; renderUpdateInfo(); }
   if (area === 'local' && ch.remoteConfig) {
