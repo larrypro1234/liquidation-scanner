@@ -1,7 +1,7 @@
 {
   "_readme": "The scanner downloads this file from GitHub every few minutes. Changing urls or rules here updates every installed scanner without reinstalling. Rules are CSS selectors and regular expressions only, never code.",
   "configVersion": 1,
-  "latestExtensionVersion": "1.4.0",
+  "latestExtensionVersion": "1.4.1",
   "updateUrl": "https://github.com/larrypro1234/liquidation-scanner/raw/main/dist/liquidation-scanner.zip",
   "notice": "",
   "urls": [
@@ -34,7 +34,7 @@
     "cardAsinAttr": "data-asin",
     "linkSelector": "a[href*=\"/dp/\"], a[href*=\"/gp/product/\"]",
     "linkAsinPattern": "/(?:dp|gp/product)/([A-Z0-9]{10})",
-    "titleSelector": "h2, h3, h2 a, [data-cy=\"title-recipe\"], .a-text-normal",
+    "titleSelector": "h2, [data-cy=\"title-recipe\"]",
     "priceSelectors": [
       ".a-price:not(.a-text-price) .a-offscreen",
       ".a-price .a-offscreen",

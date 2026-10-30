@@ -187,6 +187,8 @@ function scrapePage(rules) {
     let title = '';
     qsa(el, R.titleSelector).forEach(h => {
       const t = clean(h.getAttribute('aria-label') || h.innerText);
+      // Price links share the title's styling on Amazon; never take one as the title.
+      if (/^\$\s?\d|original price|list price/i.test(t)) return;
       if (t.length > title.length) title = t;
     });
     if (!title && img) title = clean(img.alt);
