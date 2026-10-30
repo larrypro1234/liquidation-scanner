@@ -13,7 +13,7 @@
       <img src="icons/icon48.png" alt="" width="32" height="32">
       <div>
         <h1>Liquidation Lead Scanner</h1>
-        <p class="sub">Amazon Bulk Liquidations · <span id="pageCount">20</span> pages · every <span id="everySec">3</span>s</p>
+        <p class="sub">Amazon Bulk Liquidations · <span id="pageCount">20</span> pages · one page every ~<span id="everySec">5</span>s</p>
       </div>
     </div>
     <div class="controls">
@@ -34,15 +34,6 @@
 
   <p id="updated" class="notice ok" hidden></p>
   <p id="notice" class="notice" hidden></p>
-
-  <div id="incognitoBanner" class="banner update" hidden>
-    <strong>One-time step so the scanner can work logged out:</strong>
-    <ol>
-      <li>Open <code>chrome://extensions</code> in a new tab.</li>
-      <li>On <b>Liquidation Lead Scanner</b>, click <b>Details</b>.</li>
-      <li>Turn on <b>Allow in Incognito</b>, then come back and press <b>Start scanning</b>.</li>
-    </ol>
-  </div>
 
   <div id="coolBanner" class="banner" hidden>
     <strong>Resting after an Amazon block.</strong>
@@ -122,8 +113,8 @@
         <span class="muted">Untick the box above to type in your own pages.</span>
       </div>
       <div class="field">
-        <label for="intervalSec">Refresh every (seconds)</label>
-        <input id="intervalSec" type="number" min="1" step="0.5">
+        <label for="intervalSec">Load one Amazon page every (seconds)</label>
+        <input id="intervalSec" type="number" min="3" step="1">
       </div>
       <div class="field">
         <label for="maxPrice">Max price ($, 0 = any)</label>
@@ -147,7 +138,6 @@
         <label class="check"><input id="priceDrops" type="checkbox"> Alert on price drops</label>
         <label class="check"><input id="skipUnavailable" type="checkbox"> Ignore “currently unavailable”</label>
         <label class="check"><input id="autoOpen" type="checkbox"> Auto-open new leads in a tab</label>
-        <label class="check"><input id="privateScan" type="checkbox"> Scan in a private window, logged out (recommended; buying stays on your real account)</label>
         <label class="check"><input id="separateWindow" type="checkbox"> Open pages in a separate window</label>
         <label class="check"><input id="minimized" type="checkbox"> Start that separate window minimized</label>
       </div>

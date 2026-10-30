@@ -1,7 +1,7 @@
 {
   "_readme": "The scanner downloads this file from GitHub every few minutes. Changing urls or rules here updates every installed scanner without reinstalling. Rules are CSS selectors and regular expressions only, never code.",
   "configVersion": 1,
-  "latestExtensionVersion": "1.11.1",
+  "latestExtensionVersion": "1.12.0",
   "updateUrl": "https://github.com/larrypro1234/liquidation-scanner/raw/main/dist/liquidation-scanner.zip",
   "notice": "",
   "urls": [
@@ -90,7 +90,6 @@
     "titlePattern": "^\\s*(?<units>\\d[\\d,]*)\\s*units?\\s*\\(\\s*est\\.?\\s*(?<pallets>[\\d.]+)\\s*pallets?\\s*\\)\\s*-\\s*(?<type>.+?)\\s*-\\s*(?<category>.+?)(?:\\s+lot)?\\s*$",
     "manifest": {
       "topN": 5,
-      "delayMs": 10000,
       "tableSelector": "table, [role=\"table\"], [role=\"grid\"]",
       "tableHeaderPattern": "qty|quantity",
       "seeAllPattern": "see all\\s*\\((\\d+)\\)",
@@ -116,6 +115,7 @@
       "script",
       "sub_frame"
     ],
-    "minGapMs": 3000
+    "minGapMs": 3000,
+    "manifestEvery": 4
   }
 }

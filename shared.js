@@ -8,7 +8,7 @@ const CONFIG_CHECK_MINUTES = 5;
 const DEFAULT_SETTINGS = {
   autoUrls: true,     // use the page list from config.json on GitHub
   urls: '',           // custom page list, used when autoUrls is off
-  intervalSec: 20,
+  intervalSec: 5,       // one Amazon page every ~this many seconds (randomised 80–120%)
   maxPrice: 0,        // 0 = no limit
   minDiscount: 0,     // % below est. retail / list price, 0 = any
   include: '',        // comma separated, title must contain one
@@ -18,7 +18,6 @@ const DEFAULT_SETTINGS = {
   notify: true,
   sound: true,
   autoOpen: false,
-  privateScan: true,     // scan in a logged-out Incognito window; buying stays on the real account
   separateWindow: false, // open scan pages in their own window instead of next to the dashboard
   minimized: false,      // only applies to the separate window
 };

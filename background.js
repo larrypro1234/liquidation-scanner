@@ -8,7 +8,6 @@ const MANUAL_UPDATE_GRACE_MS = 20 * 60 * 1000;
 
 let run = null;          // live scan state, mirrored to storage.session
 let memP = null;         // { settings, config, seen, leads, manifests } from storage, plus listings
-const timers = {};
 
 // ---------- state loading / saving ----------
 
@@ -30,10 +29,10 @@ function mem() {
   return memP;
 }
 
-// One-time move to the 20 s default, after Amazon blocked faster scanning.
+// One-time move to the one-page-every-5-seconds loader.
 function slowDownOnce(s) {
-  if (s.slowedDown2) return s;
-  const next = { ...s, slowedDown: true, slowedDown2: true, intervalSec: Math.max(20, Number(s.intervalSec) || 20) };
+  if (s.slowedDown3) return s;
+  const next = { ...s, slowedDown: true, slowedDown2: true, slowedDown3: true, intervalSec: 5 };
   chrome.storage.local.set({ settings: next });
   return next;
 }
@@ -59,9 +58,8 @@ async function ensureRun() {
   const d = await chrome.storage.session.get('run');
   run = d.run || { ...IDLE };
   if (run.scanning && !run.paused) {
-    // Service worker was restarted: timers are gone, so kick every tab again.
-    Object.keys(run.tabs).forEach((id, i) => scheduleNext(+id, 500 + i * 200));
-    scheduleManifest(3000);
+    // Service worker was restarted: the loader's timer is gone, so restart it.
+    scheduleLoop(1000);
     applyBlocking();
   }
   return run;
@@ -207,87 +205,126 @@ async function applyUrls() {
   if (tabs.length === urls.length && tabs.every(([, t], i) => t.url === urls[i])) return;
 
   m.listings = {};
+  order = [];
   tabs.forEach(([id, t], i) => {
     if (i >= urls.length) {
       delete run.tabs[id];
-      clearTimeout(timers[id]);
+      if (inFlight && inFlight.tabId === +id) inFlight = null;
       chrome.tabs.remove(+id).catch(() => {});
       return;
     }
     t.idx = i;
-    if (t.url !== urls[i]) {
-      Object.assign(t, newTabState(i, urls[i]));
-      scheduleNext(+id, 200 + i * 150);
-    }
+    if (t.url !== urls[i]) Object.assign(t, newTabState(i, urls[i]));
   });
   for (let i = tabs.length; i < urls.length; i++) {
-    const tab = await chrome.tabs.create({ windowId: run.windowId, url: urls[i], active: false });
+    const tab = await chrome.tabs.create({ windowId: run.windowId, url: 'about:blank', active: false });
     run.tabs[tab.id] = newTabState(i, urls[i]);
     chrome.tabs.update(tab.id, { autoDiscardable: false }).catch(() => {});
     if (run.groupId != null) chrome.tabs.group({ groupId: run.groupId, tabIds: tab.id }).catch(() => {});
-    scheduleNext(tab.id, LOAD_TIMEOUT_MS);
   }
+  if (!run.paused) scheduleLoop(1000);
   applyBlocking();
   saveRun();
   saveMem();
 }
 
 function newTabState(idx, url) {
-  return { idx, url, state: 'loading', count: 0, lastScan: 0, scans: 0, baselined: false };
+  return { idx, url, state: 'waiting', count: 0, lastScan: 0, scans: 0, baselined: false };
 }
 
-// ---------- scan loop ----------
+// ---------- the loader ----------
+// Exactly one Amazon page loads at a time. When it has been read (or gives up),
+// the next one starts about intervalSec after the previous one started, with a
+// random 80–120% spread. Scan pages go in a freshly shuffled order each round,
+// and every few turns the manifest tab gets one instead.
 
-function scheduleNext(tabId, delay) {
-  clearTimeout(timers[tabId]);
-  timers[tabId] = setTimeout(() => refreshTab(tabId), delay);
+let loopTimer = null;
+let inFlight = null;   // { tabId, at }: the one page loading right now
+let order = [];        // scan tabs still to visit this round
+
+function scheduleLoop(delay) {
+  clearTimeout(loopTimer);
+  loopTimer = setTimeout(step, Math.max(0, delay));
 }
 
-function clearTimers() {
-  for (const id in timers) { clearTimeout(timers[id]); delete timers[id]; }
+function stopLoop() {
+  clearTimeout(loopTimer);
+  loopTimer = null;
+  inFlight = null;
+  order = [];
 }
 
-// Hard cap on how fast we hit Amazon in total: every page load (scan tabs and
-// the manifest tab together) waits for its own slot, at least minGapMs apart.
-let nextSlotAt = 0;
-async function waitForSlot() {
-  const { config } = await mem();
-  const gap = (config.performance && config.performance.minGapMs) || 1200;
-  const now = Date.now();
-  const at = Math.max(now, nextSlotAt);
-  nextSlotAt = at + gap;
-  if (at > now) await new Promise(r => setTimeout(r, at - now));
+async function gapMs() {
+  const { settings, config } = await mem();
+  const floor = (config.performance && config.performance.minGapMs) || 3000;
+  const base = Math.max(floor, (Number(settings.intervalSec) || 5) * 1000);
+  // Backed off after Amazon pushed back: x2 per step, at most 60 s.
+  const slowed = Math.min(MAX_BACKOFF_MS, base * 2 ** (run.backoff || 0));
+  return Math.round(Math.max(base, slowed) * (0.8 + Math.random() * 0.4));
 }
 
-async function refreshTab(tabId, force = false) {
+function shuffle(list) {
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [list[i], list[j]] = [list[j], list[i]];
+  }
+  return list;
+}
+
+async function step() {
   await ensureRun();
-  if (!run.scanning || !run.tabs[tabId] || (run.paused && !force)) return;
-  await waitForSlot();
+  if (!run.scanning || run.paused) return;
+  if (inFlight) {
+    // Still loading: give it until the timeout, then move on without it.
+    if (Date.now() - inFlight.at < LOAD_TIMEOUT_MS) return scheduleLoop(1000);
+    if (inFlight.tabId === run.manifestTab && manifestAsin) manifestFails[manifestAsin] = (manifestFails[manifestAsin] || 0) + 1;
+    const t = run.tabs[inFlight.tabId];
+    if (t) { t.state = 'error'; t.error = 'took too long to load'; }
+    inFlight = null;
+  }
+
+  const m = await mem();
+  run.turns = (run.turns || 0) + 1;
+  const every = (m.config.performance && m.config.performance.manifestEvery) || 4;
+  if (run.manifestTab != null && run.turns % every === 0 && Date.now() >= (run.manifestPausedUntil || 0)) {
+    const asin = await pickManifestAsin();
+    if (asin) return load(run.manifestTab, `https://www.amazon.com/dp/${asin}`, asin);
+  }
+
+  if (!order.length) order = shuffle(Object.keys(run.tabs).map(Number));
+  const tabId = order.shift();
   const t = run.tabs[tabId];
-  if (!run.scanning || !t || (run.paused && !force)) return;
+  if (!t) return scheduleLoop(0);
   t.state = 'loading';
-  t.requestedAt = Date.now();
-  // Watchdog: if the page never finishes loading, try again.
-  scheduleNext(tabId, LOAD_TIMEOUT_MS);
+  return load(tabId, t.url);
+}
+
+async function load(tabId, url, asin = null) {
+  inFlight = { tabId, at: Date.now() };
+  manifestAsin = asin;
+  scheduleLoop(LOAD_TIMEOUT_MS + 500); // watchdog
   try {
-    await chrome.tabs.update(tabId, { url: t.url });
+    await chrome.tabs.update(tabId, { url });
   } catch {
-    dropTab(tabId);
+    inFlight = null;
+    if (tabId === run.manifestTab) run.manifestTab = null;
+    else dropTab(tabId);
+    if (!run.paused) scheduleLoop(1000);
   }
   saveRun();
 }
 
-async function intervalMs() {
-  const s = (await mem()).settings;
-  const base = Math.max(1, Number(s.intervalSec) || 5) * 1000;
-  // Backed off after Amazon rate-limited us: x2 per step, at most 60 s.
-  const slowed = Math.min(MAX_BACKOFF_MS, base * 2 ** (run.backoff || 0));
-  return Math.round(Math.max(base, slowed) * (0.9 + Math.random() * 0.2)); // jitter so tabs don't sync up
+// The page that was loading has been read (or failed): queue the next one.
+async function loadDone(tabId) {
+  if (!inFlight || inFlight.tabId !== tabId) return;
+  const startedAt = inFlight.at;
+  inFlight = null;
+  if (run.scanning && !run.paused) scheduleLoop(startedAt + (await gapMs()) - Date.now());
 }
 
 // ---------- backing off when Amazon rate-limits ----------
-// Each block (see enterCooldown) also doubles the refresh interval, up to 60 s;
-// 5 calm minutes take it back down a step.
+// Each block (see enterCooldown) also doubles the gap between page loads, up
+// to 60 s; 5 calm minutes take it back down a step.
 
 const MAX_BACKOFF_MS = 60000;
 const CALM_STEP_DOWN_MS = 5 * 60000;
@@ -306,8 +343,7 @@ const PROBE_RETRY_MS = 60000;
 async function enterCooldown() {
   if (run.paused === 'cooldown') return;
   run.paused = 'cooldown';
-  clearTimers();
-  clearTimeout(manifestTimer);
+  stopLoop();
   manifestAsin = null;
   const now = Date.now();
   const { lastThrottle } = await chrome.storage.local.get('lastThrottle');
@@ -340,8 +376,8 @@ async function maybeEndCooldown() {
   run.paused = 'probe';
   run.probeTab = +first[0];
   run.probeAt = now;
-  saveRun();
-  refreshTab(run.probeTab, true);
+  run.tabs[run.probeTab].state = 'loading';
+  load(run.probeTab, run.tabs[run.probeTab].url);
 }
 
 function noteCalm() {
@@ -391,8 +427,8 @@ async function onTabLoaded(tabId) {
   if (res) await handleScan(tabId, t, res);
   if (res && res.items.length) noteCalm();
   t.state = t.error ? 'error' : 'ok';
-  if (!run.paused) scheduleNext(tabId, await intervalMs());
   saveRun();
+  loadDone(tabId);
 }
 
 async function handleScan(tabId, t, res) {
@@ -491,8 +527,7 @@ function onCaptcha(tabId) {
   if (run.paused !== 'captcha') {
     run.paused = 'captcha';
     run.captchaTab = tabId;
-    clearTimers();
-    clearTimeout(manifestTimer);
+    stopLoop();
     chrome.notifications.create(`captcha|${Date.now()}`, {
       type: 'basic', iconUrl: 'icons/icon128.png', priority: 2,
       title: 'Amazon is asking for a CAPTCHA',
@@ -512,25 +547,20 @@ function resume() {
   run.paused = null;
   run.captchaTab = null;
   run.probeTab = null;
-  Object.keys(run.tabs).forEach((id, i) => scheduleNext(+id, 300 + i * 250));
-  scheduleManifest(2000);
+  inFlight = null;
+  order = [];
+  scheduleLoop(1000);
   applyBlocking();
   saveRun();
 }
 
 // ---------- lot manifests ----------
-// One extra tab walks through lot pages (/dp/ASIN) and reads each "Lot Manifest"
-// table once. New drops go first, then the rest in page order. Banned lots and
-// lots marked "Seen it" are never read.
+// The manifest tab gets every few of the loader's turns to read one lot page
+// (/dp/ASIN) and its "Lot Manifest" table. New drops go first, then the rest
+// in page order. Banned lots and lots marked "Seen it" are never read.
 
-let manifestTimer = null;
 let manifestAsin = null;     // lot the manifest tab is loading right now
 const manifestFails = {};    // asin -> failed attempts this session
-
-function scheduleManifest(delay, fn = nextManifest) {
-  clearTimeout(manifestTimer);
-  manifestTimer = setTimeout(fn, delay);
-}
 
 async function pickManifestAsin() {
   const m = await mem();
@@ -543,33 +573,10 @@ async function pickManifestAsin() {
   return pick ? pick.asin : null;
 }
 
-async function nextManifest() {
-  await ensureRun();
-  if (!run.scanning || run.paused || run.manifestTab == null) return;
-  const wait = (run.manifestPausedUntil || 0) - Date.now();
-  if (wait > 0) return scheduleManifest(wait + 1000);
-  const asin = await pickManifestAsin();
-  if (!asin) return scheduleManifest(10000);
-  await waitForSlot();
-  if (!run.scanning || run.paused || run.manifestTab == null) return;
-  manifestAsin = asin;
-  // Watchdog: a lot page that never loads counts as a failed attempt.
-  scheduleManifest(LOAD_TIMEOUT_MS + 10000, () => {
-    manifestFails[asin] = (manifestFails[asin] || 0) + 1;
-    nextManifest();
-  });
-  try {
-    await chrome.tabs.update(run.manifestTab, { url: `https://www.amazon.com/dp/${asin}` });
-  } catch {
-    run.manifestTab = null;
-    saveRun();
-  }
-}
-
 async function onManifestLoaded(tabId) {
   if (!run.scanning) return;
   const asin = manifestAsin;
-  if (!asin) return scheduleManifest(2000);
+  if (!asin) return loadDone(tabId);
   const m = await mem();
   let res = null;
   try {
@@ -590,15 +597,17 @@ async function onManifestLoaded(tabId) {
     manifestFails[asin] = (manifestFails[asin] || 0) + 1;
   }
   manifestAsin = null;
-  const delay = (m.config.rules.manifest && m.config.rules.manifest.delayMs) || 2500;
-  if (!run.paused) scheduleManifest(delay);
+  loadDone(tabId);
 }
 
 function dropTab(tabId) {
-  clearTimeout(timers[tabId]);
-  delete timers[tabId];
   if (!run || !run.tabs[tabId]) return;
   delete run.tabs[tabId];
+  order = order.filter(id => id !== tabId);
+  if (inFlight && inFlight.tabId === tabId) {
+    inFlight = null;
+    if (run.scanning && !run.paused) scheduleLoop(1000);
+  }
   if (!Object.keys(run.tabs).length) stop(false);
   else saveRun();
 }
@@ -624,11 +633,9 @@ async function startScan(homeWindowId) {
   if (!urls.length) throw new Error('No amazon.com URLs in the page list.');
 
   m.listings = {};
-  // Scanning from a private window keeps all that traffic off the Amazon account
-  // you buy with; the dashboard and every lot link stay in the normal window.
-  const privateScan = !!m.settings.privateScan && (await chrome.extension.isAllowedIncognitoAccess());
-  const ownWindow = privateScan || m.settings.separateWindow || homeWindowId == null;
-  run = { ...IDLE, scanning: true, ownWindow, privateScan, homeWindowId, startedAt: Date.now(), tabs: {} };
+  stopLoop();
+  const ownWindow = m.settings.separateWindow || homeWindowId == null;
+  run = { ...IDLE, scanning: true, ownWindow, homeWindowId, startedAt: Date.now(), tabs: {} };
   // If Amazon pushed back recently, start at that slower speed instead of full speed.
   const { lastThrottle } = await chrome.storage.local.get('lastThrottle');
   if (lastThrottle && lastThrottle.level && Date.now() - lastThrottle.at < RESTART_MEMORY_MS) {
@@ -636,7 +643,7 @@ async function startScan(homeWindowId) {
     run.calmSince = Date.now();
     run.manifestPausedUntil = Date.now() + MANIFEST_PAUSE_MS;
   }
-  // Still inside a cooldown: open the tabs empty and wait it out before touching Amazon.
+  // Still inside a cooldown: wait it out before touching Amazon.
   const cooling = !!(lastThrottle && lastThrottle.cooldownUntil > Date.now());
   if (cooling) {
     run.paused = 'cooldown';
@@ -644,48 +651,30 @@ async function startScan(homeWindowId) {
     run.cooldowns = lastThrottle.cooldowns || 1;
     chrome.alarms.create('cooldown', { when: run.cooldownUntil });
   }
-  const openUrl = i => (cooling ? 'about:blank' : urls[i]);
-  // Open the pages one by one, spread over one refresh interval, not all at once.
-  const stagger = cooling ? 0 : Math.min(1500, Math.max(250, Math.round((await intervalMs()) / urls.length)));
-  const pause = () => new Promise(r => setTimeout(r, stagger));
+  // Every tab opens empty; the loader fills them in one page at a time.
   const track = (tab, i) => {
     run.tabs[tab.id] = newTabState(i, urls[i]);
     // Keep Chrome from discarding background scan tabs to save memory.
     chrome.tabs.update(tab.id, { autoDiscardable: false }).catch(() => {});
-    scheduleNext(tab.id, LOAD_TIMEOUT_MS);
   };
-
   if (ownWindow) {
-    const win = await chrome.windows.create({ url: openUrl(0), focused: false, incognito: privateScan });
+    const win = await chrome.windows.create({ url: 'about:blank', focused: false });
     if (m.settings.minimized) chrome.windows.update(win.id, { state: 'minimized' }).catch(() => {});
     run.windowId = win.id;
     track(win.tabs[0], 0);
-    for (let i = 1; i < urls.length; i++) {
-      await pause();
-      track(await chrome.tabs.create({ windowId: win.id, url: openUrl(i), active: false }), i);
-    }
-    run.manifestTab = (await chrome.tabs.create({ windowId: win.id, url: 'about:blank', active: false })).id;
-    if (privateScan) {
-      try {
-        run.groupId = await chrome.tabs.group({ tabIds: Object.keys(run.tabs).map(Number).concat(run.manifestTab), createProperties: { windowId: win.id } });
-        await chrome.tabGroups.update(run.groupId, { title: 'Scanner', color: 'orange' });
-      } catch {}
-    }
   } else {
-    // Open the pages next to the dashboard, bundled into one "Scanner" tab group.
     run.windowId = homeWindowId;
-    for (let i = 0; i < urls.length; i++) {
-      if (i) await pause();
-      track(await chrome.tabs.create({ windowId: homeWindowId, url: openUrl(i), active: false }), i);
-    }
-    run.manifestTab = (await chrome.tabs.create({ windowId: homeWindowId, url: 'about:blank', active: false })).id;
-    try {
-      run.groupId = await chrome.tabs.group({ tabIds: Object.keys(run.tabs).map(Number).concat(run.manifestTab), createProperties: { windowId: homeWindowId } });
-      await chrome.tabGroups.update(run.groupId, { title: 'Scanner', color: 'orange' });
-    } catch {}
   }
+  for (let i = ownWindow ? 1 : 0; i < urls.length; i++) {
+    track(await chrome.tabs.create({ windowId: run.windowId, url: 'about:blank', active: false }), i);
+  }
+  run.manifestTab = (await chrome.tabs.create({ windowId: run.windowId, url: 'about:blank', active: false })).id;
   chrome.tabs.update(run.manifestTab, { autoDiscardable: false }).catch(() => {});
-  scheduleManifest(8000); // let the first scans land so there's something to look up
+  try {
+    run.groupId = await chrome.tabs.group({ tabIds: Object.keys(run.tabs).map(Number).concat(run.manifestTab), createProperties: { windowId: run.windowId } });
+    await chrome.tabGroups.update(run.groupId, { title: 'Scanner', color: 'orange' });
+  } catch {}
+  if (!cooling) scheduleLoop(500);
   applyBlocking();
   chrome.action.setBadgeText({ text: '' });
   saveRun();
@@ -694,8 +683,7 @@ async function startScan(homeWindowId) {
 
 async function stop(closeWindow = true) {
   await ensureRun();
-  clearTimers();
-  clearTimeout(manifestTimer);
+  stopLoop();
   chrome.alarms.clear('cooldown');
   manifestAsin = null;
   const { windowId, ownWindow, manifestTab } = run;
@@ -726,22 +714,25 @@ chrome.webNavigation.onErrorOccurred.addListener(({ tabId, frameId, error }) => 
     if (run.scanning && tabId === run.manifestTab && manifestAsin) {
       manifestFails[manifestAsin] = (manifestFails[manifestAsin] || 0) + 1;
       manifestAsin = null;
-      if (!run.paused) scheduleManifest(5000);
-      return;
+      return loadDone(tabId);
     }
     const t = run.tabs[tabId];
     if (!run.scanning || !t) return;
     t.state = 'error';
     t.error = error;
-    if (!run.paused) scheduleNext(tabId, await intervalMs());
     saveRun();
+    loadDone(tabId);
   });
 });
 
 chrome.tabs.onRemoved.addListener(tabId => {
   ensureRun().then(() => {
     if (run.tabs[tabId]) dropTab(tabId);
-    else if (tabId === run.manifestTab) { run.manifestTab = null; clearTimeout(manifestTimer); saveRun(); }
+    else if (tabId === run.manifestTab) {
+      run.manifestTab = null;
+      if (inFlight && inFlight.tabId === tabId) { inFlight = null; if (run.scanning && !run.paused) scheduleLoop(1000); }
+      saveRun();
+    }
   });
 });
 
