@@ -29,10 +29,10 @@ function mem() {
   return memP;
 }
 
-// One-time move to the one-page-every-5-seconds loader.
+// One-time move to one page every 3 seconds.
 function slowDownOnce(s) {
-  if (s.slowedDown3) return s;
-  const next = { ...s, slowedDown: true, slowedDown2: true, slowedDown3: true, intervalSec: 5 };
+  if (s.slowedDown4) return s;
+  const next = { ...s, slowedDown: true, slowedDown2: true, slowedDown3: true, slowedDown4: true, intervalSec: 3 };
   chrome.storage.local.set({ settings: next });
   return next;
 }

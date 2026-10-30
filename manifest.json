@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Liquidation Lead Scanner",
-  "version": "1.12.0",
+  "version": "1.13.1",
   "description": "Opens the Amazon Bulk Liquidations pages, refreshes them on a timer and alerts you when new lots or price drops appear.",
   "permissions": [
     "tabs",
@@ -11,7 +11,8 @@
     "alarms",
     "webNavigation",
     "tabGroups",
-    "declarativeNetRequestWithHostAccess"
+    "declarativeNetRequestWithHostAccess",
+    "clipboardWrite"
   ],
   "host_permissions": [
     "https://www.amazon.com/*",

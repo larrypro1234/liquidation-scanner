@@ -183,3 +183,11 @@ button { font: inherit; cursor: pointer; border-radius: 8px; }
 .manifest td.t a:hover { text-decoration: underline; }
 .manifest td.p { width: 80px; text-align: right; font-variant-numeric: tabular-nums; }
 @media (max-width: 600px) { .manifest td:nth-child(3), .manifest td:nth-child(4) { display: none; } }
+
+.buy-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
+.open-btn, .copy-btn { font: inherit; font-size: 12px; font-weight: 700; border-radius: 6px; padding: 5px 10px; cursor: pointer; text-decoration: none; white-space: nowrap; }
+.open-btn { background: var(--accent); color: var(--accent-ink); border: 0; }
+.open-btn:hover { filter: brightness(1.05); }
+.copy-btn { background: var(--card); color: var(--text); border: 1px solid var(--line); }
+.copy-btn:hover { background: var(--chip); }
+@media (max-width: 600px) { .buy-actions { justify-content: flex-start; } }

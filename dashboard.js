@@ -16,7 +16,9 @@ let dismissed = {};   // asin -> when "Seen it" was clicked
 let manifests = {};   // asin -> lot manifest read from its Amazon page
 let banMenuAsin = null;
 let activeTab = 'leads'; // only the visible list gets drawn
-let listingsSig = '';     // skip redraws when a scan brings back the same lots // listing whose Ban menu is open; lists hold still while it is
+let listingsSig = '';     // skip redraws when a scan brings back the same lots
+let pointerInList = false; // hold the lists still under the mouse so buttons don't jump
+let redrawPending = false; // listing whose Ban menu is open; lists hold still while it is
 
 // ---------- helpers ----------
 
@@ -184,6 +186,9 @@ function itemEl(it, { lead = false } = {}) {
   el.querySelector('.body').appendChild(manifestEl(it));
   if (banMenuAsin === it.asin) el.querySelector('.body').appendChild(banMenu(it, info));
 
+  el.querySelector('.open-btn').href = it.url;
+  el.querySelector('.copy-btn').dataset.url = it.url;
+
   el.querySelector('.price').textContent = fmt$(it.price);
   const r = el.querySelector('.retail');
   if (lead && it.reason === 'price-drop') r.innerHTML = `was <s>${fmt$(it.oldPrice)}</s>`;
@@ -194,6 +199,39 @@ function itemEl(it, { lead = false } = {}) {
   if (!lead && !it.matches) el.classList.add('nomatch');
   return el;
 }
+
+// ---------- buying fast ----------
+
+// Clipboard writes from an extension page: the async API when the page has
+// focus, the old execCommand route (allowed by clipboardWrite) when it doesn't.
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {}
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch {}
+  ta.remove();
+  return ok;
+}
+
+// One listener for every Copy link button, so a click still lands if the list
+// was redrawn a moment earlier.
+document.addEventListener('click', async e => {
+  const btn = e.target.closest('.copy-btn');
+  if (!btn) return;
+  const ok = await copyText(btn.dataset.url);
+  document.querySelectorAll(`.copy-btn[data-url="${btn.dataset.url}"]`).forEach(b => {
+    b.textContent = ok ? 'Copied ✓' : 'Copy failed';
+    setTimeout(() => (b.textContent = 'Copy link'), 1500);
+  });
+});
 
 // ---------- seen it ----------
 
@@ -511,7 +549,11 @@ chrome.storage.onChanged.addListener((ch, area) => {
     if (sig === listingsSig) return;
     listingsSig = sig;
     clearTimeout(listingsT);
-    listingsT = setTimeout(() => { if (!banMenuAsin) { renderListings(); renderLeads(); } }, 400);
+    listingsT = setTimeout(() => {
+      if (banMenuAsin || pointerInList) { redrawPending = true; return; }
+      renderListings();
+      renderLeads();
+    }, 400);
   }
   if (area === 'local' && ch.leads) { leads = ch.leads.newValue || []; renderLeads(); }
   if (area === 'local' && ch.dismissed) { dismissed = ch.dismissed.newValue || {}; renderLeads(); renderListings(); }
@@ -572,6 +614,14 @@ $('resume').addEventListener('click', () => send('resume'));
 $('showCaptcha').addEventListener('click', () => send('showCaptcha'));
 $('showWindow').addEventListener('click', () => send('showWindow'));
 
+['leads', 'listings'].forEach(id => {
+  $(id).addEventListener('mouseenter', () => { pointerInList = true; });
+  $(id).addEventListener('mouseleave', () => {
+    pointerInList = false;
+    if (redrawPending && !banMenuAsin) { redrawPending = false; renderListings(); renderLeads(); }
+  });
+});
+
 $('bringBack').addEventListener('click', () => unsee(Object.keys(dismissed)));
 $('clearLeads').addEventListener('click', async () => {
   await chrome.storage.local.remove('leads');
@@ -611,7 +661,7 @@ $('settings').addEventListener('submit', async e => {
     else if (el.type === 'number') next[k] = Math.max(0, parseFloat(el.value) || 0);
     else next[k] = el.value;
   });
-  next.intervalSec = Math.max(3, next.intervalSec || 5);
+  next.intervalSec = Math.max(3, next.intervalSec || 3);
   if (!next.autoUrls && !parseUrls(next.urls).length) { alert('Add at least one https://www.amazon.com/ URL.'); return; }
   await chrome.storage.local.set({ settings: next });
   $('saved').hidden = false;

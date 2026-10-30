@@ -16,9 +16,9 @@ Watches the Amazon Bulk Liquidations pages and alerts you the moment a new lot a
 ## Use
 
 1. Click the icon, then **Start scanning**.
-2. The 20 pages open as empty tabs next to the dashboard, grouped under an orange **Scanner** tab group. The scanner then loads **one Amazon page at a time**, about every 5 seconds (randomly 4–6 s), visiting the pages in a shuffled order each round. Every 4th turn goes to the manifest tab instead. With 20 pages, each one is checked roughly every 1½–2 minutes.
+2. The 20 pages open as empty tabs next to the dashboard, grouped under an orange **Scanner** tab group. The scanner then loads **one Amazon page at a time**, about every 3 seconds (randomly 2.4–3.6 s), visiting the pages in a shuffled order each round. Every 4th turn goes to the manifest tab instead. With 20 pages, each one is checked roughly every minute.
 3. The first load of each page is the baseline. After that, anything that shows up for the first time is a **NEW** lead. Anything priced below the lowest price seen for it is a **PRICE DROP**.
-4. Leads appear at the top of the dashboard, with a desktop notification and a chime. Click a notification to open the item.
+4. Every listing has an **Open ↗** button and a **Copy link** button (paste the link into whichever browser you buy from). Leads appear at the top of the dashboard, with a desktop notification and a chime. Click a notification to open the item.
 5. **All listings** shows every lot currently on the pages. You can sort by biggest % off retail, lowest price, price per unit, or newest.
 6. **Stop scanning** closes the scan tabs.
 
@@ -27,7 +27,7 @@ Keep the dashboard tab open if you want the sound alerts.
 ## Settings
 
 - **Pages to scan**: one URL per line. The default is pages 1–20 of the Bulk Liquidations list (`/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=N`).
-- **Load one Amazon page every**: seconds between page loads, across all pages together (default 5, minimum 3; `performance.minGapMs` in config.json is the floor).
+- **Load one Amazon page every**: seconds between page loads, across all pages together (default 3, minimum 3; `performance.minGapMs` in config.json is the floor).
 - **Max price / Min % off / keywords**: only items that pass these filters count as leads.
 - **Auto-open new leads**: opens each new lead in a background tab so you can buy fast.
 
