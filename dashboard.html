@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Liquidation Scanner</title>
+  <link rel="icon" href="icons/icon32.png">
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <img src="icons/icon48.png" alt="" width="32" height="32">
+      <div>
+        <h1>Liquidation Lead Scanner</h1>
+        <p class="sub">Amazon Bulk Liquidations · <span id="pageCount">20</span> pages · every <span id="everySec">3</span>s</p>
+      </div>
+    </div>
+    <div class="controls">
+      <span id="status" class="pill idle">Idle</span>
+      <button id="showWindow" class="ghost" hidden>Show scan window</button>
+      <button id="toggle" class="primary">Start scanning</button>
+    </div>
+  </header>
+
+  <div id="updateBanner" class="banner update" hidden>
+    <strong>New version <span id="latestVersion"></span> is ready.</strong>
+    <ol>
+      <li><a id="updateLink" href="#" target="_blank" rel="noopener">Download the update</a> and unzip it.</li>
+      <li>Drag the new <b>liquidation-scanner</b> folder onto your old one and choose <b>Replace</b>.</li>
+      <li><button id="reloadExt" class="ghost small">Reload scanner</button> (your settings and leads are kept)</li>
+    </ol>
+  </div>
+
+  <p id="notice" class="notice" hidden></p>
+
+  <div id="captchaBanner" class="banner" hidden>
+    <strong>Amazon is asking for a CAPTCHA.</strong>
+    Scanning is paused. Solve it in the scan window and scanning resumes by itself.
+    Raising the refresh interval in Settings makes this happen less often.
+    <span class="banner-actions">
+      <button id="showCaptcha" class="ghost">Show CAPTCHA tab</button>
+      <button id="resume" class="ghost">Resume now</button>
+    </span>
+  </div>
+
+  <section class="stats">
+    <div class="stat"><span class="k">Scans</span><span id="sScans" class="v">0</span></div>
+    <div class="stat"><span class="k">Scans / min</span><span id="sRate" class="v">0</span></div>
+    <div class="stat"><span class="k">Listings on pages</span><span id="sListings" class="v">0</span></div>
+    <div class="stat"><span class="k">Leads this run</span><span id="sLeads" class="v">0</span></div>
+    <div class="stat"><span class="k">Running</span><span id="sTime" class="v">–</span></div>
+  </section>
+
+  <section>
+    <h2 class="section-title">Pages</h2>
+    <div id="pages" class="pages"></div>
+  </section>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="leads" class="active">New leads <span id="leadCount" class="count">0</span></button>
+    <button role="tab" data-tab="listings">All listings <span id="listingCount" class="count">0</span></button>
+    <button role="tab" data-tab="settings">Settings</button>
+  </nav>
+
+  <section id="tab-leads" class="panel">
+    <div class="toolbar">
+      <p class="hint">Items that appear (or drop below their lowest seen price) while scanning, if they pass your filters. The first load of each page counts as the baseline.</p>
+      <button id="clearLeads" class="ghost small">Clear leads</button>
+    </div>
+    <div id="leads" class="list"></div>
+  </section>
+
+  <section id="tab-listings" class="panel" hidden>
+    <div class="toolbar">
+      <input id="search" type="search" placeholder="Search titles…">
+      <select id="sort">
+        <option value="discount">Biggest % off retail</option>
+        <option value="price">Lowest price</option>
+        <option value="ppu">Lowest price per unit</option>
+        <option value="new">Newest first seen</option>
+        <option value="page">Page order</option>
+      </select>
+      <label class="check"><input id="onlyMatch" type="checkbox"> Only items that pass my filters</label>
+    </div>
+    <div id="listings" class="list"></div>
+  </section>
+
+  <section id="tab-settings" class="panel" hidden>
+    <form id="settings" class="settings">
+      <div class="field wide">
+        <label for="urls">Pages to scan <span class="muted">(one URL per line, each opens in its own tab)</span></label>
+        <label class="check"><input id="autoUrls" type="checkbox"> Keep this list updated automatically from GitHub (recommended)</label>
+        <textarea id="urls" rows="8" spellcheck="false"></textarea>
+        <span class="muted">Untick the box above to type in your own pages.</span>
+      </div>
+      <div class="field">
+        <label for="intervalSec">Refresh every (seconds)</label>
+        <input id="intervalSec" type="number" min="1" step="0.5">
+      </div>
+      <div class="field">
+        <label for="maxPrice">Max price ($, 0 = any)</label>
+        <input id="maxPrice" type="number" min="0" step="1">
+      </div>
+      <div class="field">
+        <label for="minDiscount">Min % off est. retail (0 = any)</label>
+        <input id="minDiscount" type="number" min="0" max="100" step="1">
+      </div>
+      <div class="field">
+        <label for="include">Title must contain one of</label>
+        <input id="include" type="text" placeholder="e.g. electronics, tools, apple">
+      </div>
+      <div class="field">
+        <label for="exclude">Skip titles containing</label>
+        <input id="exclude" type="text" placeholder="e.g. clothing, shoes">
+      </div>
+      <div class="field wide checks">
+        <label class="check"><input id="notify" type="checkbox"> Desktop notifications</label>
+        <label class="check"><input id="sound" type="checkbox"> Sound alert (keep this tab open)</label>
+        <label class="check"><input id="priceDrops" type="checkbox"> Alert on price drops</label>
+        <label class="check"><input id="skipUnavailable" type="checkbox"> Ignore “currently unavailable”</label>
+        <label class="check"><input id="autoOpen" type="checkbox"> Auto-open new leads in a tab</label>
+        <label class="check"><input id="minimized" type="checkbox"> Start scan window minimized</label>
+      </div>
+      <div class="field wide row">
+        <button type="submit" class="primary">Save settings</button>
+        <span id="saved" class="muted" hidden>Saved ✓</span>
+        <span class="spacer"></span>
+        <button type="button" id="forgetSeen" class="ghost small">Forget seen items</button>
+      </div>
+    </form>
+  </section>
+
+  <footer class="foot">
+    Version <span id="version"></span> · <span id="configStatus">not checked yet</span>
+    · <button id="checkNow" class="link">Check for updates now</button>
+  </footer>
+
+  <template id="itemTpl">
+    <article class="item">
+      <a class="thumb" target="_blank" rel="noopener"><img alt="" loading="lazy"></a>
+      <div class="body">
+        <a class="title" target="_blank" rel="noopener"></a>
+        <div class="meta"></div>
+      </div>
+      <div class="price-col">
+        <div class="price"></div>
+        <div class="retail"></div>
+      </div>
+    </article>
+  </template>
+
+  <script src="shared.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>

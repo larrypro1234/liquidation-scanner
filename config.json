@@ -1,0 +1,53 @@
+{
+  "_readme": "The scanner downloads this file from GitHub every few minutes. Changing urls or rules here updates every installed scanner without reinstalling. Rules are CSS selectors and regular expressions only, never code.",
+  "configVersion": 1,
+  "latestExtensionVersion": "1.1.0",
+  "updateUrl": "https://github.com/larrypro1234/liquidation-scanner/releases/latest/download/liquidation-scanner.zip",
+  "notice": "",
+  "urls": [
+    "https://www.amazon.com/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&ref=lp_23511005011_sar",
+    "https://www.amazon.com/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=2&ref=sr_pg_2",
+    "https://www.amazon.com/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=3&ref=sr_pg_3",
+    "https://www.amazon.com/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=4&ref=sr_pg_4",
+    "https://www.amazon.com/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=5&ref=sr_pg_5",
+    "https://www.amazon.com/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=6&ref=sr_pg_6",
+    "https://www.amazon.com/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=7&ref=sr_pg_7",
+    "https://www.amazon.com/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=8&ref=sr_pg_8",
+    "https://www.amazon.com/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=9&ref=sr_pg_9",
+    "https://www.amazon.com/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=10&ref=sr_pg_10",
+    "https://www.amazon.com/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=11&ref=sr_pg_11",
+    "https://www.amazon.com/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=12&ref=sr_pg_12",
+    "https://www.amazon.com/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=13&ref=sr_pg_13",
+    "https://www.amazon.com/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=14&ref=sr_pg_14",
+    "https://www.amazon.com/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=15&ref=sr_pg_15",
+    "https://www.amazon.com/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=16&ref=sr_pg_16",
+    "https://www.amazon.com/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=17&ref=sr_pg_17",
+    "https://www.amazon.com/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=18&ref=sr_pg_18",
+    "https://www.amazon.com/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=19&ref=sr_pg_19",
+    "https://www.amazon.com/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=20&ref=sr_pg_20"
+  ],
+  "rules": {
+    "captchaSelector": "form[action*=\"validateCaptcha\"]",
+    "captchaTitle": "robot check",
+    "captchaText": "not a robot|enter the characters you see",
+    "cardSelector": "[data-asin]",
+    "cardAsinAttr": "data-asin",
+    "linkSelector": "a[href*=\"/dp/\"], a[href*=\"/gp/product/\"]",
+    "linkAsinPattern": "/(?:dp|gp/product)/([A-Z0-9]{10})",
+    "titleSelector": "h2, h3, h2 a, [data-cy=\"title-recipe\"], .a-text-normal",
+    "priceSelectors": [
+      ".a-price:not(.a-text-price) .a-offscreen",
+      ".a-price .a-offscreen",
+      "[class*=\"price\"]"
+    ],
+    "listPriceSelector": ".a-price.a-text-price .a-offscreen, [data-a-strike=\"true\"] .a-offscreen",
+    "retailPatterns": [
+      "(?:retail|msrp|value|worth)\\D{0,25}\\$\\s*(\\d+(?:\\.\\d+)?)\\s*(k\\b)?",
+      "\\$\\s*(\\d+(?:\\.\\d+)?)\\s*(k\\b)?\\s*(?:est\\.?\\s*|estimated\\s*|total\\s*)?(?:retail|msrp|value)"
+    ],
+    "unitsPattern": "(\\d{1,6})\\s*\\+?\\s*(?:units|items|pcs|pieces|products)\\b",
+    "unavailablePattern": "currently unavailable|out of stock",
+    "sponsoredSelector": ".puis-sponsored-label-text",
+    "maxItemsPerPage": 200
+  }
+}
