@@ -4,7 +4,7 @@ Watches the Amazon Bulk Liquidations pages and alerts you the moment a new lot a
 
 ## Install (once)
 
-1. Download [liquidation-scanner.zip](https://github.com/larrypro1234/liquidation-scanner/releases/latest/download/liquidation-scanner.zip) and unzip it somewhere permanent (e.g. `Documents/liquidation-scanner`).
+1. Download [liquidation-scanner.zip](https://github.com/larrypro1234/liquidation-scanner/raw/main/dist/liquidation-scanner.zip) and unzip it somewhere permanent (e.g. `Documents/liquidation-scanner`).
 2. In Chrome open `chrome://extensions`.
 3. Turn on **Developer mode** (top right).
 4. Click **Load unpacked** and pick the unzipped `liquidation-scanner` folder.
@@ -46,5 +46,5 @@ If CAPTCHAs keep coming, raise the interval to 5–10 s or scan fewer pages (pag
 ### Releasing a new version (maintainer)
 
 1. Bump `version` in `manifest.json`.
-2. Zip the `liquidation-scanner` folder and attach it to a new GitHub release as `liquidation-scanner.zip`.
+2. Rebuild `dist/liquidation-scanner.zip` (zip of the extension files inside a `liquidation-scanner/` folder, without `dist/` and `.git/`).
 3. Set `latestExtensionVersion` in `config.json` to the same version and push.
