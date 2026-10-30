@@ -64,6 +64,8 @@
     <button role="tab" data-tab="settings">Settings</button>
   </nav>
 
+  <div id="bannedBar" class="banned-bar" hidden></div>
+
   <section id="tab-leads" class="panel">
     <div class="toolbar">
       <p class="hint">Every lot on the pages except the ones you ban in Settings. Lots that drop while you're scanning are tagged <b>NEW</b> (or <b>PRICE DROP</b>) and go to the top.</p>
@@ -139,6 +141,8 @@
     Version <span id="version"></span> · <span id="configStatus">not checked yet</span>
     · <button id="checkNow" class="link">Check for updates now</button>
   </footer>
+
+  <div id="toast" class="toast" role="status" hidden></div>
 
   <template id="itemTpl">
     <article class="item">

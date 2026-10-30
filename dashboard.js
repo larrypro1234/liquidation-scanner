@@ -12,6 +12,7 @@ let listings = {};
 let freshAsins = new Set();
 let audioCtx = null;
 let unseenLeads = 0;
+let banMenuAsin = null; // listing whose Ban menu is open; lists hold still while it is
 
 // ---------- helpers ----------
 
@@ -141,6 +142,17 @@ function itemEl(it, { lead = false } = {}) {
   if (it.unavailable) tag('Unavailable');
   tag(lead ? 'found ' + ago(it.foundAt) : 'first seen ' + ago(it.firstSeen));
 
+  const banBtn = document.createElement('button');
+  banBtn.className = 'ban-btn';
+  banBtn.textContent = '⊘ Ban…';
+  banBtn.addEventListener('click', () => {
+    banMenuAsin = banMenuAsin === it.asin ? null : it.asin;
+    document.querySelectorAll('.ban-menu').forEach(m => m.remove());
+    if (banMenuAsin) el.querySelector('.body').appendChild(banMenu(it, info));
+  });
+  meta.appendChild(banBtn);
+  if (banMenuAsin === it.asin) el.querySelector('.body').appendChild(banMenu(it, info));
+
   el.querySelector('.price').textContent = fmt$(it.price);
   const r = el.querySelector('.retail');
   if (lead && it.reason === 'price-drop') r.innerHTML = `was <s>${fmt$(it.oldPrice)}</s>`;
@@ -150,6 +162,96 @@ function itemEl(it, { lead = false } = {}) {
   if (hot) el.classList.add('hot');
   if (!lead && !it.matches) el.classList.add('nomatch');
   return el;
+}
+
+// ---------- banning ----------
+
+function bannedWords() {
+  return splitWords(settings.exclude);
+}
+
+async function setBanned(words) {
+  const next = { ...settings, exclude: [...new Set(words)].join(', ') };
+  settings = next;
+  if (document.activeElement !== $('exclude')) $('exclude').value = next.exclude;
+  await chrome.storage.local.set({ settings: next });
+}
+
+async function ban(word) {
+  word = word.trim().toLowerCase();
+  if (!word) return;
+  banMenuAsin = null;
+  await setBanned([...bannedWords(), word]);
+  toast(`Banned “${word}”`, () => setBanned(bannedWords().filter(w => w !== word)));
+}
+
+// Menu of things to ban for one listing: its condition, the words in it, its
+// category, or any word typed in.
+function banMenu(it, info) {
+  const box = document.createElement('div');
+  box.className = 'ban-menu';
+  const label = document.createElement('span');
+  label.className = 'muted';
+  label.textContent = 'Hide every lot whose title contains:';
+  box.appendChild(label);
+
+  const already = bannedWords();
+  const options = [];
+  if (info.type) {
+    options.push(info.type);
+    const words = info.type.split(/\s+/);
+    if (words.length > 1) options.push(...words);
+  }
+  if (info.category) options.push(info.category);
+  [...new Set(options.map(o => o.toLowerCase()))]
+    .filter(o => !already.includes(o))
+    .forEach(o => {
+      const b = document.createElement('button');
+      b.className = 'ban-option';
+      b.textContent = o;
+      b.addEventListener('click', () => ban(o));
+      box.appendChild(b);
+    });
+
+  const form = document.createElement('form');
+  form.className = 'ban-own';
+  form.innerHTML = '<input type="text" placeholder="or type any word"><button type="submit" class="ban-option">Ban</button><button type="button" class="link">Cancel</button>';
+  form.addEventListener('submit', e => { e.preventDefault(); ban(form.querySelector('input').value); });
+  form.querySelector('.link').addEventListener('click', () => { banMenuAsin = null; box.remove(); renderLeads(); renderListings(); });
+  box.appendChild(form);
+  return box;
+}
+
+function renderBanned() {
+  const words = bannedWords();
+  const bar = $('bannedBar');
+  bar.hidden = !words.length;
+  bar.innerHTML = '<span class="muted">Banned:</span>';
+  words.forEach(w => {
+    const chip = document.createElement('button');
+    chip.className = 'banned-chip';
+    chip.title = 'Un-ban';
+    chip.textContent = w + ' ×';
+    chip.addEventListener('click', () => setBanned(words.filter(x => x !== w)));
+    bar.appendChild(chip);
+  });
+}
+
+let toastT = null;
+function toast(text, undo) {
+  const t = $('toast');
+  t.innerHTML = '';
+  t.append(text);
+  if (undo) {
+    const b = document.createElement('button');
+    b.className = 'link';
+    b.textContent = 'Undo';
+    b.addEventListener('click', () => { undo(); t.hidden = true; });
+    t.append(' · ', b);
+  }
+  t.hidden = false;
+  clearTimeout(toastT);
+  toastT = setTimeout(() => (t.hidden = true), 6000);
 }
 
 // New leads = every lot that isn't banned by the current filters. Drops caught
@@ -164,7 +266,7 @@ function renderLeads() {
   const items = [];
   drops.forEach((l, asin) => items.push({ ...l, ...(onPages.get(asin) || {}), reason: l.reason, oldPrice: l.oldPrice, foundAt: l.foundAt, drop: true }));
   onPages.forEach((it, asin) => { if (!drops.has(asin)) items.push(it); });
-  const shown = items.filter(it => passesFilters(it, settings));
+  const shown = items.filter(it => passesFilters(it, settings)).map(it => ({ ...it, matches: true }));
   shown.sort((a, b) => (b.drop ? 1 : 0) - (a.drop ? 1 : 0) || (b.foundAt || b.firstSeen || 0) - (a.foundAt || a.firstSeen || 0));
 
   $('leadCount').textContent = shown.length;
@@ -292,6 +394,7 @@ async function load() {
   run = s.run || null;
   listings = s.listings || {};
   fillSettingsForm();
+  renderBanned();
   renderUpdateInfo();
   renderHeader();
   renderLeads();
@@ -305,11 +408,13 @@ chrome.storage.onChanged.addListener((ch, area) => {
     listings = ch.listings.newValue || {};
     // Don't re-render the big list while the user is scrolling through it every second.
     clearTimeout(listingsT);
-    listingsT = setTimeout(() => { renderListings(); renderLeads(); }, 400);
+    listingsT = setTimeout(() => { if (!banMenuAsin) { renderListings(); renderLeads(); } }, 400);
   }
   if (area === 'local' && ch.leads) { leads = ch.leads.newValue || []; renderLeads(); }
   if (area === 'local' && ch.settings) {
     settings = { ...DEFAULT_SETTINGS, ...(ch.settings.newValue || {}) };
+    if (document.activeElement !== $('exclude')) $('exclude').value = settings.exclude;
+    renderBanned();
     renderHeader();
     renderLeads();
     renderListings();

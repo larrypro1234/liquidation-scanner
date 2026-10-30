@@ -1,7 +1,7 @@
 {
   "_readme": "The scanner downloads this file from GitHub every few minutes. Changing urls or rules here updates every installed scanner without reinstalling. Rules are CSS selectors and regular expressions only, never code.",
   "configVersion": 1,
-  "latestExtensionVersion": "1.5.0",
+  "latestExtensionVersion": "1.6.0",
   "updateUrl": "https://github.com/larrypro1234/liquidation-scanner/raw/main/dist/liquidation-scanner.zip",
   "notice": "",
   "urls": [
