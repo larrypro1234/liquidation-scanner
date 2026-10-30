@@ -16,7 +16,7 @@ Watches the Amazon Bulk Liquidations pages and alerts you the moment a new lot a
 ## Use
 
 1. Click the icon, then **Start scanning**.
-2. All 20 pages open as tabs next to the dashboard, grouped under an orange **Scanner** tab group (Settings can put them in a separate window instead). The pages open one by one, then each is re-loaded every 5 seconds (slower if Amazon pushes back) and read as soon as its HTML arrives.
+2. All 20 pages open as tabs next to the dashboard, grouped under an orange **Scanner** tab group (Settings can put them in a separate window instead). The pages open one by one, then each is re-loaded every 20 seconds (never more than about one Amazon page per second in total) and read as soon as its HTML arrives.
 3. The first load of each page is the baseline. After that, anything that shows up for the first time is a **NEW** lead. Anything priced below the lowest price seen for it is a **PRICE DROP**.
 4. Leads appear at the top of the dashboard, with a desktop notification and a chime. Click a notification to open the item.
 5. **All listings** shows every lot currently on the pages. You can sort by biggest % off retail, lowest price, price per unit, or newest.
@@ -27,13 +27,13 @@ Keep the dashboard tab open if you want the sound alerts.
 ## Settings
 
 - **Pages to scan**: one URL per line. The default is pages 1–20 of the Bulk Liquidations list (`/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=N`).
-- **Refresh every**: seconds between reloads of each page (default 5).
+- **Refresh every**: seconds between reloads of each page (default 20). A hard cap of about one Amazon page per second in total applies on top (`performance.minGapMs` in config.json).
 - **Max price / Min % off / keywords**: only items that pass these filters count as leads.
 - **Auto-open new leads**: opens each new lead in a background tab so you can buy fast.
 
 ## CAPTCHA
 
-Twenty pages every 5 seconds is about 240 page loads a minute. Amazon may answer with a "not a robot" CAPTCHA or its "SORRY, something went wrong" dog page (rate limiting). On the dog page the scanner slows itself down (up to 60 s per page) and speeds back up after 5 calm minutes; a restart within 30 minutes keeps the slower speed. On a CAPTCHA the scanner:
+Amazon may answer heavy traffic with its "SORRY, something went wrong" dog page, which blocks the whole connection for a while. On the dog page the scanner stops every request for 10 minutes (20, 40, up to 60 if it keeps happening), tests a single page, and only then restarts, one speed step slower. Starting again during a rest waits it out. On a "not a robot" CAPTCHA the scanner:
 
 - stops every reload immediately,
 - brings the CAPTCHA tab to the front and notifies you,

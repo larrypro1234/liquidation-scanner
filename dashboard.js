@@ -77,13 +77,25 @@ function renderHeader() {
 
   const st = $('status');
   st.className = 'pill ' + (paused ? 'paused' : scanning ? 'on' : 'idle');
-  st.textContent = paused ? 'Paused · CAPTCHA' : scanning ? 'Scanning' : 'Idle';
+  st.textContent = paused === 'captcha' ? 'Paused · CAPTCHA'
+    : paused === 'cooldown' ? 'Resting · Amazon block'
+    : paused === 'probe' ? 'Checking Amazon…'
+    : scanning ? 'Scanning' : 'Idle';
 
   const btn = $('toggle');
   btn.textContent = scanning ? 'Stop scanning' : 'Start scanning';
   btn.classList.toggle('stop', !!scanning);
   $('showWindow').hidden = !scanning;
-  $('captchaBanner').hidden = !paused;
+  $('captchaBanner').hidden = paused !== 'captcha';
+  const cooling = paused === 'cooldown' || paused === 'probe';
+  $('coolBanner').hidden = !cooling;
+  if (cooling) {
+    const left = Math.max(0, Math.ceil((run.cooldownUntil - Date.now()) / 60000));
+    const at = new Date(run.cooldownUntil).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    $('coolText').textContent = paused === 'probe'
+      ? 'The scanner is testing one page to see whether the block has lifted. If it has, scanning restarts slowly by itself.'
+      : `The scanner has stopped all requests until ${at} (${left} min) so the block can clear. Then it tests one page and restarts slowly by itself.`;
+  }
   const backoff = scanning && run.backoff ? run.backoff : 0;
   $('slowBanner').hidden = !backoff || paused;
   if (backoff) $('slowSec').textContent = Math.min(60, settings.intervalSec * 2 ** backoff);

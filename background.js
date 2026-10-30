@@ -30,10 +30,10 @@ function mem() {
   return memP;
 }
 
-// One-time move from the old 3 s default to 5 s, which is much easier on the laptop.
+// One-time move to the 20 s default, after Amazon blocked faster scanning.
 function slowDownOnce(s) {
-  if (s.slowedDown) return s;
-  const next = { ...s, slowedDown: true, intervalSec: Math.max(5, Number(s.intervalSec) || 5) };
+  if (s.slowedDown2) return s;
+  const next = { ...s, slowedDown: true, slowedDown2: true, intervalSec: Math.max(20, Number(s.intervalSec) || 20) };
   chrome.storage.local.set({ settings: next });
   return next;
 }
@@ -47,7 +47,7 @@ const BLOCK_RULE_ID = 1;
 async function applyBlocking() {
   const { config } = await mem();
   const types = (config.performance && config.performance.blockTypes) || [];
-  const tabIds = run && run.scanning && !run.paused ? Object.keys(run.tabs).map(Number) : [];
+  const tabIds = run && run.scanning && run.paused !== 'captcha' ? Object.keys(run.tabs).map(Number) : [];
   const addRules = types.length && tabIds.length
     ? [{ id: BLOCK_RULE_ID, priority: 1, action: { type: 'block' }, condition: { tabIds, resourceTypes: types } }]
     : [];
@@ -247,10 +247,24 @@ function clearTimers() {
   for (const id in timers) { clearTimeout(timers[id]); delete timers[id]; }
 }
 
-async function refreshTab(tabId) {
+// Hard cap on how fast we hit Amazon in total: every page load (scan tabs and
+// the manifest tab together) waits for its own slot, at least minGapMs apart.
+let nextSlotAt = 0;
+async function waitForSlot() {
+  const { config } = await mem();
+  const gap = (config.performance && config.performance.minGapMs) || 1200;
+  const now = Date.now();
+  const at = Math.max(now, nextSlotAt);
+  nextSlotAt = at + gap;
+  if (at > now) await new Promise(r => setTimeout(r, at - now));
+}
+
+async function refreshTab(tabId, force = false) {
   await ensureRun();
+  if (!run.scanning || !run.tabs[tabId] || (run.paused && !force)) return;
+  await waitForSlot();
   const t = run.tabs[tabId];
-  if (!run.scanning || run.paused || !t) return;
+  if (!run.scanning || !t || (run.paused && !force)) return;
   t.state = 'loading';
   t.requestedAt = Date.now();
   // Watchdog: if the page never finishes loading, try again.
@@ -272,29 +286,62 @@ async function intervalMs() {
 }
 
 // ---------- backing off when Amazon rate-limits ----------
-// Amazon answers too many requests with its "SORRY, something went wrong" dog
-// page. Each fresh hit doubles the refresh interval (5 → 10 → 20 → 40 → 60 s)
-// and pauses manifest reading; 5 calm minutes take it back down a step.
+// Each block (see enterCooldown) also doubles the refresh interval, up to 60 s;
+// 5 calm minutes take it back down a step.
 
 const MAX_BACKOFF_MS = 60000;
-const BACKOFF_STEP_GAP_MS = 20000;   // at most one step up per 20 s
 const CALM_STEP_DOWN_MS = 5 * 60000;
 const MANIFEST_PAUSE_MS = 3 * 60000;
 const RESTART_MEMORY_MS = 30 * 60000;  // a restart within this long keeps the slower speed
 
-function noteThrottle() {
+// Amazon's dog page means it's limiting the whole connection, and every request
+// while blocked can keep the block going. So stop everything (10 min, then 20,
+// 40, up to 60 if it keeps happening), then check with a single page before
+// restarting, one speed step slower.
+const COOLDOWN_FIRST_MS = 10 * 60000;
+const COOLDOWN_MAX_MS = 60 * 60000;
+const COOLDOWN_FORGET_MS = 2 * 60 * 60000; // older blocks don't lengthen the next wait
+const PROBE_RETRY_MS = 60000;
+
+async function enterCooldown() {
+  if (run.paused === 'cooldown') return;
+  run.paused = 'cooldown';
+  clearTimers();
+  clearTimeout(manifestTimer);
+  manifestAsin = null;
   const now = Date.now();
-  // Step up at most once per gap, so a burst of busy pages counts once but
-  // Amazon staying busy keeps slowing us further.
-  if (now - (run.lastBackoffStepAt || 0) > BACKOFF_STEP_GAP_MS) {
-    run.backoff = Math.min(4, (run.backoff || 0) + 1);
-    run.lastBackoffStepAt = now;
-  }
+  const { lastThrottle } = await chrome.storage.local.get('lastThrottle');
+  const recent = lastThrottle && now - lastThrottle.at < COOLDOWN_FORGET_MS ? lastThrottle.cooldowns || 0 : 0;
+  run.cooldowns = Math.max(run.cooldowns || 0, recent) + 1;
+  const wait = Math.min(COOLDOWN_MAX_MS, COOLDOWN_FIRST_MS * 2 ** (run.cooldowns - 1));
+  run.cooldownUntil = now + wait;
+  run.backoff = Math.min(4, (run.backoff || 0) + 1);
   run.calmSince = now;
-  run.manifestPausedUntil = now + MANIFEST_PAUSE_MS;
-  // Remembered so a restart doesn't go straight back to full speed.
-  chrome.storage.local.set({ lastThrottle: { level: run.backoff, at: now } });
+  run.probeTab = null;
+  Object.values(run.tabs).forEach(t => { if (t.state === 'loading') t.state = 'throttled'; });
+  chrome.alarms.create('cooldown', { when: run.cooldownUntil });
+  chrome.storage.local.set({ lastThrottle: { level: run.backoff, cooldowns: run.cooldowns, cooldownUntil: run.cooldownUntil, at: now } });
+  chrome.notifications.create(`cooldown|${now}`, {
+    type: 'basic', iconUrl: 'icons/icon128.png', priority: 2,
+    title: 'Amazon blocked the connection for now',
+    message: `The scanner stopped all requests for ${Math.round(wait / 60000)} minutes so the block can clear. It restarts by itself.`,
+  });
   saveRun();
+}
+
+async function maybeEndCooldown() {
+  if (!run || !run.scanning) return;
+  const now = Date.now();
+  const due = (run.paused === 'cooldown' && now >= run.cooldownUntil) ||
+    (run.paused === 'probe' && now - (run.probeAt || 0) > PROBE_RETRY_MS);
+  if (!due) return;
+  const first = Object.entries(run.tabs).sort((a, b) => a[1].idx - b[1].idx)[0];
+  if (!first) return;
+  run.paused = 'probe';
+  run.probeTab = +first[0];
+  run.probeAt = now;
+  saveRun();
+  refreshTab(run.probeTab, true);
 }
 
 function noteCalm() {
@@ -328,12 +375,17 @@ async function onTabLoaded(tabId) {
   if (run.paused === 'captcha' && run.captchaTab === tabId) resume();
 
   if (res && res.throttled) {
-    // Keep this page's last good listings; just wait longer before trying it again.
+    // Keep this page's last good listings and rest until Amazon lets us back in.
     t.state = 'throttled';
-    noteThrottle();
-    if (!run.paused) scheduleNext(tabId, Math.round((await intervalMs()) * 1.5));
-    saveRun();
+    await enterCooldown();
     return;
+  }
+
+  if (run.paused === 'probe' && tabId === run.probeTab && res) {
+    // The test page came through: restart everything (slower), manifests a bit later.
+    run.probeTab = null;
+    run.manifestPausedUntil = Date.now() + MANIFEST_PAUSE_MS;
+    resume();
   }
 
   if (res) await handleScan(tabId, t, res);
@@ -451,6 +503,7 @@ function resume() {
   if (!run.scanning) return;
   run.paused = null;
   run.captchaTab = null;
+  run.probeTab = null;
   Object.keys(run.tabs).forEach((id, i) => scheduleNext(+id, 300 + i * 250));
   scheduleManifest(2000);
   applyBlocking();
@@ -489,6 +542,8 @@ async function nextManifest() {
   if (wait > 0) return scheduleManifest(wait + 1000);
   const asin = await pickManifestAsin();
   if (!asin) return scheduleManifest(10000);
+  await waitForSlot();
+  if (!run.scanning || run.paused || run.manifestTab == null) return;
   manifestAsin = asin;
   // Watchdog: a lot page that never loads counts as a failed attempt.
   scheduleManifest(LOAD_TIMEOUT_MS + 10000, () => {
@@ -516,9 +571,8 @@ async function onManifestLoaded(tabId) {
   if (res && res.captcha) return onCaptcha(tabId);
   if (run.paused === 'captcha' && run.captchaTab === tabId) resume();
   if (res && res.throttled) {
-    noteThrottle();
     manifestAsin = null;
-    return scheduleManifest(MANIFEST_PAUSE_MS);
+    return enterCooldown();
   }
 
   if (res && (res.found || res.heading === false)) {
@@ -569,11 +623,19 @@ async function startScan(homeWindowId) {
   if (lastThrottle && lastThrottle.level && Date.now() - lastThrottle.at < RESTART_MEMORY_MS) {
     run.backoff = lastThrottle.level;
     run.calmSince = Date.now();
-    run.lastBackoffStepAt = Date.now();
     run.manifestPausedUntil = Date.now() + MANIFEST_PAUSE_MS;
   }
+  // Still inside a cooldown: open the tabs empty and wait it out before touching Amazon.
+  const cooling = !!(lastThrottle && lastThrottle.cooldownUntil > Date.now());
+  if (cooling) {
+    run.paused = 'cooldown';
+    run.cooldownUntil = lastThrottle.cooldownUntil;
+    run.cooldowns = lastThrottle.cooldowns || 1;
+    chrome.alarms.create('cooldown', { when: run.cooldownUntil });
+  }
+  const openUrl = i => (cooling ? 'about:blank' : urls[i]);
   // Open the pages one by one, spread over one refresh interval, not all at once.
-  const stagger = Math.min(1500, Math.max(250, Math.round((await intervalMs()) / urls.length)));
+  const stagger = cooling ? 0 : Math.min(1500, Math.max(250, Math.round((await intervalMs()) / urls.length)));
   const pause = () => new Promise(r => setTimeout(r, stagger));
   const track = (tab, i) => {
     run.tabs[tab.id] = newTabState(i, urls[i]);
@@ -583,13 +645,13 @@ async function startScan(homeWindowId) {
   };
 
   if (ownWindow) {
-    const win = await chrome.windows.create({ url: urls[0], focused: false });
+    const win = await chrome.windows.create({ url: openUrl(0), focused: false });
     if (m.settings.minimized) chrome.windows.update(win.id, { state: 'minimized' }).catch(() => {});
     run.windowId = win.id;
     track(win.tabs[0], 0);
     for (let i = 1; i < urls.length; i++) {
       await pause();
-      track(await chrome.tabs.create({ windowId: win.id, url: urls[i], active: false }), i);
+      track(await chrome.tabs.create({ windowId: win.id, url: openUrl(i), active: false }), i);
     }
     run.manifestTab = (await chrome.tabs.create({ windowId: win.id, url: 'about:blank', active: false })).id;
   } else {
@@ -597,7 +659,7 @@ async function startScan(homeWindowId) {
     run.windowId = homeWindowId;
     for (let i = 0; i < urls.length; i++) {
       if (i) await pause();
-      track(await chrome.tabs.create({ windowId: homeWindowId, url: urls[i], active: false }), i);
+      track(await chrome.tabs.create({ windowId: homeWindowId, url: openUrl(i), active: false }), i);
     }
     run.manifestTab = (await chrome.tabs.create({ windowId: homeWindowId, url: 'about:blank', active: false })).id;
     try {
@@ -617,6 +679,7 @@ async function stop(closeWindow = true) {
   await ensureRun();
   clearTimers();
   clearTimeout(manifestTimer);
+  chrome.alarms.clear('cooldown');
   manifestAsin = null;
   const { windowId, ownWindow, manifestTab } = run;
   const tabIds = Object.keys(run.tabs).map(Number).concat(manifestTab != null ? [manifestTab] : []);
@@ -731,7 +794,8 @@ chrome.alarms.get('config').then(a => {
 });
 chrome.alarms.onAlarm.addListener(alarm => {
   if (alarm.name === 'config') refreshConfig();
-  else ensureRun().then(checkDiskVersion);
+  else if (alarm.name === 'cooldown') ensureRun().then(maybeEndCooldown);
+  else ensureRun().then(() => { checkDiskVersion(); maybeEndCooldown(); });
 });
 
 resumeAfterReload();
