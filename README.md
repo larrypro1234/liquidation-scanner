@@ -27,7 +27,7 @@ Keep the dashboard tab open if you want the sound alerts.
 ## Settings
 
 - **Pages to scan**: one URL per line. The default is pages 1–20 of the Bulk Liquidations list (`/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=N`).
-- **Refresh every**: seconds between reloads of each page (default 3).
+- **Refresh every**: seconds between reloads of each page (default 5).
 - **Max price / Min % off / keywords**: only items that pass these filters count as leads.
 - **Auto-open new leads**: opens each new lead in a background tab so you can buy fast.
 

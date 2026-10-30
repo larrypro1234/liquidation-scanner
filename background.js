@@ -18,7 +18,7 @@ function mem() {
       const d = await chrome.storage.local.get(['settings', 'seen', 'leads', 'manifests']);
       const l = await chrome.storage.session.get('listings');
       return {
-        settings: { ...DEFAULT_SETTINGS, ...(d.settings || {}) },
+        settings: slowDownOnce({ ...DEFAULT_SETTINGS, ...(d.settings || {}) }),
         config: await getConfig(),
         seen: d.seen || {},
         leads: d.leads || [],
@@ -30,6 +30,30 @@ function mem() {
   return memP;
 }
 
+// One-time move from the old 3 s default to 5 s, which is much easier on the laptop.
+function slowDownOnce(s) {
+  if (s.slowedDown) return s;
+  const next = { ...s, slowedDown: true, intervalSec: Math.max(5, Number(s.intervalSec) || 5) };
+  chrome.storage.local.set({ settings: next });
+  return next;
+}
+
+// ---------- lighter scan tabs ----------
+// The scanner only reads the page HTML, so scan tabs skip images, scripts, fonts
+// and embedded frames. That's most of the CPU and bandwidth of an Amazon page.
+// Lifted while a CAPTCHA is up so its picture shows. The manifest tab is left alone.
+const BLOCK_RULE_ID = 1;
+
+async function applyBlocking() {
+  const { config } = await mem();
+  const types = (config.performance && config.performance.blockTypes) || [];
+  const tabIds = run && run.scanning && !run.paused ? Object.keys(run.tabs).map(Number) : [];
+  const addRules = types.length && tabIds.length
+    ? [{ id: BLOCK_RULE_ID, priority: 1, action: { type: 'block' }, condition: { tabIds, resourceTypes: types } }]
+    : [];
+  await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [BLOCK_RULE_ID], addRules }).catch(() => {});
+}
+
 async function ensureRun() {
   if (run) return run;
   const d = await chrome.storage.session.get('run');
@@ -38,6 +62,7 @@ async function ensureRun() {
     // Service worker was restarted: timers are gone, so kick every tab again.
     Object.keys(run.tabs).forEach((id, i) => scheduleNext(+id, 500 + i * 200));
     scheduleManifest(3000);
+    applyBlocking();
   }
   return run;
 }
@@ -72,6 +97,7 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
   if (changes.settings) m.settings = { ...DEFAULT_SETTINGS, ...(changes.settings.newValue || {}) };
   if (changes.remoteConfig) m.config = await getConfig();
   if (changes.settings || changes.remoteConfig) applyUrls();
+  if (changes.remoteConfig) applyBlocking();
   // The dashboard can clear these.
   if (changes.leads && !changes.leads.newValue) m.leads = [];
   if (changes.seen && !changes.seen.newValue) m.seen = {};
@@ -172,7 +198,9 @@ async function resumeAfterReload() {
 // existing tabs, opens extra ones or closes the leftovers.
 async function applyUrls() {
   await ensureRun();
-  if (!run.scanning) return;
+  // While start() is still opening tabs the set is half built; it reads the
+  // latest settings itself, so there's nothing to reconcile yet.
+  if (!run.scanning || starting) return;
   const m = await mem();
   const urls = effectiveUrls(m.settings, m.config);
   const tabs = Object.entries(run.tabs).sort((a, b) => a[1].idx - b[1].idx);
@@ -199,6 +227,7 @@ async function applyUrls() {
     if (run.groupId != null) chrome.tabs.group({ groupId: run.groupId, tabIds: tab.id }).catch(() => {});
     scheduleNext(tab.id, LOAD_TIMEOUT_MS);
   }
+  applyBlocking();
   saveRun();
   saveMem();
 }
@@ -361,6 +390,8 @@ function onCaptcha(tabId) {
     chrome.runtime.sendMessage({ type: 'captcha' }).catch(() => {});
     chrome.windows.update(run.windowId, { focused: true, state: 'normal' }).catch(() => {});
     chrome.tabs.update(tabId, { active: true }).catch(() => {});
+    // Let the CAPTCHA picture load, then show it again.
+    applyBlocking().then(() => chrome.tabs.reload(tabId).catch(() => {}));
   }
   saveRun();
 }
@@ -371,6 +402,7 @@ function resume() {
   run.captchaTab = null;
   Object.keys(run.tabs).forEach((id, i) => scheduleNext(+id, 300 + i * 250));
   scheduleManifest(2000);
+  applyBlocking();
   saveRun();
 }
 
@@ -451,7 +483,19 @@ function dropTab(tabId) {
   else saveRun();
 }
 
+let starting = false;
+
 async function start(homeWindowId) {
+  if (starting) return;
+  starting = true;
+  try {
+    await startScan(homeWindowId);
+  } finally {
+    starting = false;
+  }
+}
+
+async function startScan(homeWindowId) {
   await ensureRun();
   if (run.scanning) await stop(true);
   await refreshConfig();
@@ -489,6 +533,7 @@ async function start(homeWindowId) {
   }
   chrome.tabs.update(run.manifestTab, { autoDiscardable: false }).catch(() => {});
   scheduleManifest(8000); // let the first scans land so there's something to look up
+  applyBlocking();
   chrome.action.setBadgeText({ text: '' });
   saveRun();
   saveMem();
@@ -503,6 +548,7 @@ async function stop(closeWindow = true) {
   const tabIds = Object.keys(run.tabs).map(Number).concat(manifestTab != null ? [manifestTab] : []);
   run = { ...IDLE, scans: run.scans, leads: run.leads };
   await chrome.storage.session.set({ run });
+  await applyBlocking();
   if (!closeWindow) return;
   if (ownWindow && windowId) await chrome.windows.remove(windowId).catch(() => {});
   else if (tabIds.length) await chrome.tabs.remove(tabIds).catch(() => {});

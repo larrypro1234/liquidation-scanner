@@ -14,7 +14,9 @@ let audioCtx = null;
 let unseenLeads = 0;
 let dismissed = {};   // asin -> when "Seen it" was clicked
 let manifests = {};   // asin -> lot manifest read from its Amazon page
-let banMenuAsin = null; // listing whose Ban menu is open; lists hold still while it is
+let banMenuAsin = null;
+let activeTab = 'leads'; // only the visible list gets drawn
+let listingsSig = '';     // skip redraws when a scan brings back the same lots // listing whose Ban menu is open; lists hold still while it is
 
 // ---------- helpers ----------
 
@@ -116,6 +118,7 @@ function renderHeader() {
 
 function itemEl(it, { lead = false } = {}) {
   const el = $('itemTpl').content.firstElementChild.cloneNode(true);
+  el.dataset.asin = it.asin;
   const href = it.url;
   el.querySelector('.thumb').href = href;
   const img = el.querySelector('img');
@@ -346,6 +349,7 @@ function renderLeads() {
   shown.sort((a, b) => (b.drop ? 1 : 0) - (a.drop ? 1 : 0) || (b.foundAt || b.firstSeen || 0) - (a.foundAt || a.firstSeen || 0));
 
   $('leadCount').textContent = shown.length;
+  if (activeTab !== 'leads') return;
   const box = $('leads');
   box.innerHTML = '';
   if (!shown.length) {
@@ -369,6 +373,7 @@ function renderListings() {
   Object.values(listings).flat().forEach(it => { if (!map.has(it.asin)) map.set(it.asin, it); });
   let items = [...map.values()].map(it => ({ ...it, matches: passesFilters(it, settings) }));
   $('listingCount').textContent = items.length;
+  if (activeTab !== 'listings') return;
 
   const q = $('search').value.trim().toLowerCase();
   if (q) items = items.filter(it => it.title.toLowerCase().includes(q));
@@ -483,16 +488,23 @@ chrome.storage.onChanged.addListener((ch, area) => {
   if (area === 'session' && ch.run) { run = ch.run.newValue || null; renderHeader(); }
   if (area === 'session' && ch.listings) {
     listings = ch.listings.newValue || {};
-    // Don't re-render the big list while the user is scrolling through it every second.
+    // Most scans bring back exactly the same lots; only redraw when something changed.
+    const sig = Object.keys(listings).sort().map(k => (listings[k] || [])
+      .map(it => `${it.asin}:${it.price}:${it.unavailable ? 1 : 0}:${it.title.length}`).join(',')).join('|');
+    if (sig === listingsSig) return;
+    listingsSig = sig;
     clearTimeout(listingsT);
     listingsT = setTimeout(() => { if (!banMenuAsin) { renderListings(); renderLeads(); } }, 400);
   }
   if (area === 'local' && ch.leads) { leads = ch.leads.newValue || []; renderLeads(); }
   if (area === 'local' && ch.dismissed) { dismissed = ch.dismissed.newValue || {}; renderLeads(); renderListings(); }
   if (area === 'local' && ch.manifests) {
+    // A manifest arrives every few seconds; patch just those listings instead of redrawing.
+    const before = manifests;
     manifests = ch.manifests.newValue || {};
-    clearTimeout(listingsT);
-    listingsT = setTimeout(() => { if (!banMenuAsin) { renderListings(); renderLeads(); } }, 400);
+    Object.keys(manifests).filter(a => before[a] !== manifests[a] && JSON.stringify(before[a]) !== JSON.stringify(manifests[a]))
+      .forEach(asin => document.querySelectorAll(`.item[data-asin="${asin}"] .manifest`)
+        .forEach(old => old.replaceWith(manifestEl({ asin }))));
   }
   if (area === 'local' && ch.settings) {
     settings = { ...DEFAULT_SETTINGS, ...(ch.settings.newValue || {}) };
@@ -557,7 +569,9 @@ document.querySelectorAll('.tabs button').forEach(b =>
   b.addEventListener('click', () => {
     document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('active', x === b));
     document.querySelectorAll('.panel').forEach(p => (p.hidden = p.id !== 'tab-' + b.dataset.tab));
-    if (b.dataset.tab === 'listings') renderListings();
+    activeTab = b.dataset.tab;
+    if (activeTab === 'listings') renderListings();
+    if (activeTab === 'leads') renderLeads();
   }));
 
 ['search', 'sort', 'onlyMatch', 'typeFilter', 'catFilter'].forEach(id => $(id).addEventListener('input', renderListings));

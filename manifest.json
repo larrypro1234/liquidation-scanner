@@ -1,14 +1,37 @@
 {
   "manifest_version": 3,
   "name": "Liquidation Lead Scanner",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "description": "Opens the Amazon Bulk Liquidations pages, refreshes them on a timer and alerts you when new lots or price drops appear.",
-  "permissions": ["tabs", "storage", "notifications", "scripting", "alarms", "webNavigation", "tabGroups"],
-  "host_permissions": ["https://www.amazon.com/*", "https://raw.githubusercontent.com/*"],
-  "background": { "service_worker": "background.js" },
+  "permissions": [
+    "tabs",
+    "storage",
+    "notifications",
+    "scripting",
+    "alarms",
+    "webNavigation",
+    "tabGroups",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "host_permissions": [
+    "https://www.amazon.com/*",
+    "https://raw.githubusercontent.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_title": "Open Liquidation Scanner",
-    "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png" }
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
   },
-  "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
 }
