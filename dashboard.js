@@ -5,6 +5,7 @@ let settings = { ...DEFAULT_SETTINGS };
 let config = { urls: [], rules: {} };
 let configCheck = null;
 let outdatedSince = null;
+let justUpdated = null;
 let run = null;
 let leads = [];
 let listings = {};
@@ -222,6 +223,10 @@ function renderUpdateInfo() {
     $('latestVersion').textContent = config.latestExtensionVersion;
     $('updateLink').href = config.updateUrl || '#';
   }
+  // Confirm a hands-free update for a few minutes after it lands.
+  const fresh = justUpdated && Date.now() - justUpdated.at < 5 * 60 * 1000;
+  $('updated').hidden = !fresh;
+  if (fresh) $('updated').textContent = `✓ Updated automatically to version ${justUpdated.version} ${ago(justUpdated.at)}`;
   $('notice').hidden = !config.notice;
   $('notice').textContent = config.notice || '';
   $('configStatus').textContent = !configCheck
@@ -242,7 +247,7 @@ async function load() {
   const s = await chrome.storage.session.get(['run', 'listings']);
   settings = { ...DEFAULT_SETTINGS, ...(l.settings || {}) };
   config = await getConfig();
-  ({ configCheck = null, outdatedSince = null } = await chrome.storage.local.get(['configCheck', 'outdatedSince']));
+  ({ configCheck = null, outdatedSince = null, justUpdated = null } = await chrome.storage.local.get(['configCheck', 'outdatedSince', 'justUpdated']));
   leads = l.leads || [];
   run = s.run || null;
   listings = s.listings || {};

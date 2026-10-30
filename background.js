@@ -143,6 +143,7 @@ async function resumeAfterReload() {
   const { resumeAfterReload: r } = await chrome.storage.local.get('resumeAfterReload');
   if (!r) return;
   await chrome.storage.local.remove('resumeAfterReload');
+  await chrome.storage.local.set({ justUpdated: { version: chrome.runtime.getManifest().version, at: Date.now() } });
 
   // Extension pages close on reload, so reopen the dashboard where it was.
   let homeWindowId = r.homeWindowId;

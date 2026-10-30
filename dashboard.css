@@ -143,6 +143,7 @@ button { font: inherit; cursor: pointer; border-radius: 8px; }
 .banner li { margin: 4px 0; }
 .banner a { color: inherit; font-weight: 650; }
 .notice { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin: 0 0 16px; }
+.notice.ok { border-color: color-mix(in srgb, var(--ok) 45%, transparent); color: var(--ok); font-weight: 600; }
 .settings textarea:disabled { opacity: .6; }
 .foot { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
 .link { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; font-size: 12px; }
