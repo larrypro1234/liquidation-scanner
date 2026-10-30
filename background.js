@@ -268,6 +268,7 @@ async function handleScan(tabId, t, res) {
 
   for (const it of res.items) {
     it.page = t.idx + 1;
+    Object.assign(it, lotInfo(it, m.config));
     it.matches = passesFilters(it, s);
     const prev = m.seen[it.asin];
     if (!prev) {
@@ -311,6 +312,7 @@ function announce(found, s) {
   if (s.notify) {
     found.slice(0, 3).forEach(l => {
       const bits = [];
+      if (l.type) bits.push(l.type);
       if (l.price != null) bits.push('$' + l.price.toFixed(2));
       if (l.discount != null) bits.push(l.discount + '% off retail');
       if (l.reason === 'price-drop') bits.push('was $' + l.oldPrice.toFixed(2));

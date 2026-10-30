@@ -59,6 +59,50 @@ function newerVersion(a, b) {
   return false;
 }
 
+// Lot details from the title. Amazon's liquidation titles look like
+// "315 Units (Est 1 pallets) - Returned Damaged - Apparel Lot"; rules.titlePattern
+// pulls out units, pallets, type and category. Titles that don't fit fall back
+// to the rules.lotTypes keyword list for the type.
+const ruleRes = new Map();
+function ruleRe(src) {
+  if (!ruleRes.has(src)) {
+    let re = null;
+    try { re = new RegExp(src, 'i'); } catch {}
+    ruleRes.set(src, re);
+  }
+  return ruleRes.get(src);
+}
+
+function lotInfo(it, config) {
+  const rules = (config && config.rules) || {};
+  const title = it.title || '';
+  const m = rules.titlePattern && ruleRe(rules.titlePattern) && title.match(ruleRe(rules.titlePattern));
+  if (m && m.groups) {
+    return {
+      type: (m.groups.type || '').trim(),
+      category: (m.groups.category || '').trim(),
+      pallets: m.groups.pallets ? parseFloat(m.groups.pallets) : null,
+    };
+  }
+  let type = '';
+  for (const t of rules.lotTypes || []) {
+    const re = ruleRe(t.pattern);
+    if (re && re.test(title)) { type = t.label; break; }
+  }
+  return { type, category: '', pallets: null };
+}
+
+// Colour family for a type tag, so e.g. "Returned Damaged" and "Damaged" both read as damaged.
+function typeTone(type) {
+  const t = (type || '').toLowerCase();
+  if (/damag|salvage|parts|as[ -]is/.test(t)) return 'bad';
+  if (/return/.test(t)) return 'return';
+  if (/overstock|surplus|excess|shelf/.test(t)) return 'overstock';
+  if (/new|open box/.test(t)) return 'new';
+  if (/refurb/.test(t)) return 'refurb';
+  return 'other';
+}
+
 function parseUrls(text) {
   return String(text || '')
     .split(/\s+/)

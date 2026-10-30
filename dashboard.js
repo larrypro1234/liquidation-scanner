@@ -15,6 +15,8 @@ let unseenLeads = 0;
 
 // ---------- helpers ----------
 
+const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
 const fmt$ = n => (n == null ? '–' : '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
 function ago(ts) {
@@ -128,6 +130,10 @@ function itemEl(it, { lead = false } = {}) {
     meta.appendChild(s);
   };
   if (lead) tag(it.reason === 'price-drop' ? 'PRICE DROP' : 'NEW', it.reason === 'price-drop' ? 'drop' : 'new');
+  const info = lotInfo(it, config);
+  if (info.type) tag(info.type, 'type tone-' + typeTone(info.type));
+  if (info.category) tag(info.category, 'cat');
+  if (info.pallets) tag(`${info.pallets} pallet${info.pallets === 1 ? '' : 's'}`);
   if (it.discount != null) tag(`${it.discount}% off retail`, 'off');
   if (it.units) tag(`${it.units} units` + (it.price ? ` · ${fmt$(it.price / it.units)}/unit` : ''));
   tag('Page ' + it.page);
@@ -173,6 +179,24 @@ function renderListings() {
   const q = $('search').value.trim().toLowerCase();
   if (q) items = items.filter(it => it.title.toLowerCase().includes(q));
   if ($('onlyMatch').checked) items = items.filter(it => it.matches);
+
+  // Type and category dropdowns list what's currently on the pages, with counts.
+  items.forEach(it => { it.info = lotInfo(it, config); });
+  const dropdown = (id, key, allLabel) => {
+    const sel = $(id);
+    const chosen = sel.value;
+    const counts = {};
+    items.forEach(it => { const v = it.info[key] || 'Other'; counts[v] = (counts[v] || 0) + 1; });
+    sel.innerHTML = `<option value="">${allLabel}</option>` +
+      Object.entries(counts).sort((a, b) => b[1] - a[1])
+        .map(([v, n]) => `<option value="${escapeHtml(v)}">${escapeHtml(v)} (${n})</option>`).join('');
+    sel.value = chosen in counts ? chosen : '';
+    return sel.value;
+  };
+  const type = dropdown('typeFilter', 'type', 'All types');
+  if (type) items = items.filter(it => (it.info.type || 'Other') === type);
+  const cat = dropdown('catFilter', 'category', 'All categories');
+  if (cat) items = items.filter(it => (it.info.category || 'Other') === cat);
 
   const big = Number.MAX_VALUE;
   const sorters = {
@@ -326,7 +350,7 @@ document.querySelectorAll('.tabs button').forEach(b =>
     if (b.dataset.tab === 'listings') renderListings();
   }));
 
-['search', 'sort', 'onlyMatch'].forEach(id => $(id).addEventListener('input', renderListings));
+['search', 'sort', 'onlyMatch', 'typeFilter', 'catFilter'].forEach(id => $(id).addEventListener('input', renderListings));
 
 $('autoUrls').addEventListener('change', syncUrlBox);
 $('reloadExt').addEventListener('click', () => chrome.runtime.reload());

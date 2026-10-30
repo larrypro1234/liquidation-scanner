@@ -1,7 +1,7 @@
 {
   "_readme": "The scanner downloads this file from GitHub every few minutes. Changing urls or rules here updates every installed scanner without reinstalling. Rules are CSS selectors and regular expressions only, never code.",
   "configVersion": 1,
-  "latestExtensionVersion": "1.3.1",
+  "latestExtensionVersion": "1.4.0",
   "updateUrl": "https://github.com/larrypro1234/liquidation-scanner/raw/main/dist/liquidation-scanner.zip",
   "notice": "",
   "urls": [
@@ -48,6 +48,45 @@
     "unitsPattern": "(\\d{1,6})\\s*\\+?\\s*(?:units|items|pcs|pieces|products)\\b",
     "unavailablePattern": "currently unavailable|out of stock",
     "sponsoredSelector": ".puis-sponsored-label-text",
-    "maxItemsPerPage": 200
+    "maxItemsPerPage": 200,
+    "lotTypes": [
+      {
+        "label": "Customer Returns",
+        "pattern": "customer return|\\breturn(?:s|ed)?\\b"
+      },
+      {
+        "label": "Overstock",
+        "pattern": "overstock|over-stock|excess inventory|surplus"
+      },
+      {
+        "label": "Shelf Pulls",
+        "pattern": "shelf[ -]?pulls?"
+      },
+      {
+        "label": "Refurbished",
+        "pattern": "refurb"
+      },
+      {
+        "label": "Like New",
+        "pattern": "like[ -]new|open[ -]box"
+      },
+      {
+        "label": "Salvage",
+        "pattern": "salvage|damaged|as[ -]is\\b|untested|for parts"
+      },
+      {
+        "label": "Used",
+        "pattern": "\\bused\\b|pre-?owned"
+      },
+      {
+        "label": "Mixed",
+        "pattern": "mixed condition|mixed"
+      },
+      {
+        "label": "New",
+        "pattern": "brand[ -]new|\\bnew\\b"
+      }
+    ],
+    "titlePattern": "^\\s*(?<units>\\d[\\d,]*)\\s*units?\\s*\\(\\s*est\\.?\\s*(?<pallets>[\\d.]+)\\s*pallets?\\s*\\)\\s*-\\s*(?<type>.+?)\\s*-\\s*(?<category>.+?)(?:\\s+lot)?\\s*$"
   }
 }

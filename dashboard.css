@@ -115,6 +115,13 @@ button { font: inherit; cursor: pointer; border-radius: 8px; }
 .tag { background: var(--chip); border-radius: 5px; padding: 1px 6px; }
 .tag.new { background: var(--accent); color: var(--accent-ink); font-weight: 650; }
 .tag.drop { background: var(--ok); color: #fff; font-weight: 650; }
+.tag.type { font-weight: 700; color: #fff; background: #6b7280; }
+.tag.tone-bad { background: #b91c1c; }
+.tag.tone-return { background: #c2410c; }
+.tag.tone-overstock { background: #1d4ed8; }
+.tag.tone-new { background: #15803d; }
+.tag.tone-refurb { background: #0e7490; }
+.tag.cat { font-weight: 650; color: var(--text); }
 .tag.off { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); font-weight: 650; }
 .price-col { text-align: right; white-space: nowrap; }
 .price { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
