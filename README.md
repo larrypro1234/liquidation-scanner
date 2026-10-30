@@ -16,7 +16,7 @@ Watches the Amazon Bulk Liquidations pages and alerts you the moment a new lot a
 ## Use
 
 1. Click the icon, then **Start scanning**.
-2. All 20 pages open as tabs next to the dashboard, grouped under an orange **Scanner** tab group (Settings can put them in a separate window instead). The pages open one by one, then each is re-loaded every 20 seconds (never more than about one Amazon page per second in total) and read as soon as its HTML arrives.
+2. All 20 pages open in a private (Incognito) window, logged out of Amazon, grouped under an orange **Scanner** tab group. The dashboard and every lot you open to buy stay in your normal window on your real account. This needs **Allow in Incognito** turned on for the extension (chrome://extensions → Details); without it the pages open next to the dashboard instead. The pages open one by one, then each is re-loaded every 20 seconds (never more than about one Amazon page per second in total) and read as soon as its HTML arrives.
 3. The first load of each page is the baseline. After that, anything that shows up for the first time is a **NEW** lead. Anything priced below the lowest price seen for it is a **PRICE DROP**.
 4. Leads appear at the top of the dashboard, with a desktop notification and a chime. Click a notification to open the item.
 5. **All listings** shows every lot currently on the pages. You can sort by biggest % off retail, lowest price, price per unit, or newest.

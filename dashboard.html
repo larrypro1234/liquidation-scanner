@@ -35,6 +35,15 @@
   <p id="updated" class="notice ok" hidden></p>
   <p id="notice" class="notice" hidden></p>
 
+  <div id="incognitoBanner" class="banner update" hidden>
+    <strong>One-time step so the scanner can work logged out:</strong>
+    <ol>
+      <li>Open <code>chrome://extensions</code> in a new tab.</li>
+      <li>On <b>Liquidation Lead Scanner</b>, click <b>Details</b>.</li>
+      <li>Turn on <b>Allow in Incognito</b>, then come back and press <b>Start scanning</b>.</li>
+    </ol>
+  </div>
+
   <div id="coolBanner" class="banner" hidden>
     <strong>Amazon has blocked this connection for now.</strong>
     <span id="coolText"></span>
@@ -138,6 +147,7 @@
         <label class="check"><input id="priceDrops" type="checkbox"> Alert on price drops</label>
         <label class="check"><input id="skipUnavailable" type="checkbox"> Ignore “currently unavailable”</label>
         <label class="check"><input id="autoOpen" type="checkbox"> Auto-open new leads in a tab</label>
+        <label class="check"><input id="privateScan" type="checkbox"> Scan in a private window, logged out (recommended; buying stays on your real account)</label>
         <label class="check"><input id="separateWindow" type="checkbox"> Open pages in a separate window</label>
         <label class="check"><input id="minimized" type="checkbox"> Start that separate window minimized</label>
       </div>

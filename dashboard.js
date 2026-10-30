@@ -15,6 +15,7 @@ let unseenLeads = 0;
 let dismissed = {};   // asin -> when "Seen it" was clicked
 let manifests = {};   // asin -> lot manifest read from its Amazon page
 let banMenuAsin = null;
+let incognitoAllowed = null; // whether Chrome lets the scanner open a private window
 let activeTab = 'leads'; // only the visible list gets drawn
 let listingsSig = '';     // skip redraws when a scan brings back the same lots // listing whose Ban menu is open; lists hold still while it is
 
@@ -87,6 +88,7 @@ function renderHeader() {
   btn.classList.toggle('stop', !!scanning);
   $('showWindow').hidden = !scanning;
   $('captchaBanner').hidden = paused !== 'captcha';
+  $('incognitoBanner').hidden = !(settings.privateScan && incognitoAllowed === false);
   const cooling = paused === 'cooldown' || paused === 'probe';
   $('coolBanner').hidden = !cooling;
   if (cooling) {
@@ -482,6 +484,7 @@ function updateTitle() {
 // ---------- data loading ----------
 
 async function load() {
+  incognitoAllowed = await chrome.extension.isAllowedIncognitoAccess();
   const l = await chrome.storage.local.get(['settings', 'leads']);
   const s = await chrome.storage.session.get(['run', 'listings']);
   settings = { ...DEFAULT_SETTINGS, ...(l.settings || {}) };
@@ -618,4 +621,6 @@ $('settings').addEventListener('submit', async e => {
 });
 
 setInterval(() => { renderHeader(); renderUpdateInfo(); }, 1000);
+// Pick up "Allow in Incognito" being switched on without a reload.
+setInterval(async () => { incognitoAllowed = await chrome.extension.isAllowedIncognitoAccess(); }, 3000);
 load();

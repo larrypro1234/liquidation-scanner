@@ -441,6 +441,16 @@ async function handleScan(tabId, t, res) {
   saveMem();
 }
 
+// Open an Amazon page in a normal (not private) window, i.e. on the real
+// logged-in account, preferring the dashboard's window.
+async function openForBuying(url, active = true) {
+  const wins = await chrome.windows.getAll({ windowTypes: ['normal'] });
+  const normal = wins.filter(w => !w.incognito);
+  const target = normal.find(w => run && w.id === run.homeWindowId) || normal[0];
+  if (target) return chrome.tabs.create({ url, active, windowId: target.id });
+  return chrome.windows.create({ url, focused: active });
+}
+
 function announce(found, s) {
   chrome.runtime.sendMessage({ type: 'leads', leads: found }).catch(() => {});
   chrome.action.setBadgeBackgroundColor({ color: '#d92d20' });
@@ -471,9 +481,7 @@ function announce(found, s) {
     }
   }
   if (s.autoOpen) {
-    found.slice(0, 5).forEach(l =>
-      chrome.tabs.create({ url: l.url, active: false, ...(run.homeWindowId ? { windowId: run.homeWindowId } : {}) }).catch(() =>
-        chrome.tabs.create({ url: l.url, active: false })));
+    found.slice(0, 5).forEach(l => openForBuying(l.url, false).catch(() => {}));
   }
 }
 
@@ -616,8 +624,11 @@ async function startScan(homeWindowId) {
   if (!urls.length) throw new Error('No amazon.com URLs in the page list.');
 
   m.listings = {};
-  const ownWindow = m.settings.separateWindow || homeWindowId == null;
-  run = { ...IDLE, scanning: true, ownWindow, homeWindowId, startedAt: Date.now(), tabs: {} };
+  // Scanning from a private window keeps all that traffic off the Amazon account
+  // you buy with; the dashboard and every lot link stay in the normal window.
+  const privateScan = !!m.settings.privateScan && (await chrome.extension.isAllowedIncognitoAccess());
+  const ownWindow = privateScan || m.settings.separateWindow || homeWindowId == null;
+  run = { ...IDLE, scanning: true, ownWindow, privateScan, homeWindowId, startedAt: Date.now(), tabs: {} };
   // If Amazon pushed back recently, start at that slower speed instead of full speed.
   const { lastThrottle } = await chrome.storage.local.get('lastThrottle');
   if (lastThrottle && lastThrottle.level && Date.now() - lastThrottle.at < RESTART_MEMORY_MS) {
@@ -645,7 +656,7 @@ async function startScan(homeWindowId) {
   };
 
   if (ownWindow) {
-    const win = await chrome.windows.create({ url: openUrl(0), focused: false });
+    const win = await chrome.windows.create({ url: openUrl(0), focused: false, incognito: privateScan });
     if (m.settings.minimized) chrome.windows.update(win.id, { state: 'minimized' }).catch(() => {});
     run.windowId = win.id;
     track(win.tabs[0], 0);
@@ -654,6 +665,12 @@ async function startScan(homeWindowId) {
       track(await chrome.tabs.create({ windowId: win.id, url: openUrl(i), active: false }), i);
     }
     run.manifestTab = (await chrome.tabs.create({ windowId: win.id, url: 'about:blank', active: false })).id;
+    if (privateScan) {
+      try {
+        run.groupId = await chrome.tabs.group({ tabIds: Object.keys(run.tabs).map(Number).concat(run.manifestTab), createProperties: { windowId: win.id } });
+        await chrome.tabGroups.update(run.groupId, { title: 'Scanner', color: 'orange' });
+      } catch {}
+    }
   } else {
     // Open the pages next to the dashboard, bundled into one "Scanner" tab group.
     run.windowId = homeWindowId;
@@ -756,7 +773,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 
 chrome.notifications.onClicked.addListener(id => {
   const [kind, asin] = id.split('|');
-  if (kind === 'lead') chrome.tabs.create({ url: `https://www.amazon.com/dp/${asin}` });
+  if (kind === 'lead') ensureRun().then(() => openForBuying(`https://www.amazon.com/dp/${asin}`));
   else if (kind === 'captcha') {
     ensureRun().then(() => {
       if (!run.captchaTab) return;

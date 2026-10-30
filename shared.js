@@ -18,6 +18,7 @@ const DEFAULT_SETTINGS = {
   notify: true,
   sound: true,
   autoOpen: false,
+  privateScan: true,     // scan in a logged-out Incognito window; buying stays on the real account
   separateWindow: false, // open scan pages in their own window instead of next to the dashboard
   minimized: false,      // only applies to the separate window
 };
