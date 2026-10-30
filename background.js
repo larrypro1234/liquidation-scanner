@@ -4,6 +4,7 @@ const IDLE = { scanning: false, paused: null, windowId: null, ownWindow: false, 
 const MAX_SEEN = 20000;
 const MAX_LEADS = 300;
 const LOAD_TIMEOUT_MS = 25000;
+const MANUAL_UPDATE_GRACE_MS = 20 * 60 * 1000;
 
 let run = null;          // live scan state, mirrored to storage.session
 let memP = null;         // { settings, config, seen, leads } from storage, plus listings
@@ -89,10 +90,16 @@ async function refreshConfig() {
   }
 }
 
+// Only nag about a manual update once the Mac auto-updater has had time to install it.
 async function notifyIfOutdated(remote) {
   const latest = remote.latestExtensionVersion;
   if (!newerVersion(latest, chrome.runtime.getManifest().version)) return;
-  const { notifiedVersion } = await chrome.storage.local.get('notifiedVersion');
+  let { outdatedSince, notifiedVersion } = await chrome.storage.local.get(['outdatedSince', 'notifiedVersion']);
+  if (!outdatedSince || outdatedSince.version !== latest) {
+    outdatedSince = { version: latest, at: Date.now() };
+    await chrome.storage.local.set({ outdatedSince });
+  }
+  if (Date.now() - outdatedSince.at < MANUAL_UPDATE_GRACE_MS) return;
   if (notifiedVersion === latest) return;
   await chrome.storage.local.set({ notifiedVersion: latest });
   chrome.notifications.create(`update|${Date.now()}`, {
@@ -100,6 +107,59 @@ async function notifyIfOutdated(remote) {
     title: 'Scanner update available',
     message: `Version ${latest} has new features. Open the dashboard to update.`,
   });
+}
+
+// ---------- self-update from disk ----------
+// The Mac auto-updater (install-mac.sh) swaps in new files on disk. When the
+// manifest there is newer than the running code, reload to pick it up and
+// put the dashboard and any running scan back the way they were.
+
+async function checkDiskVersion() {
+  let version;
+  try {
+    const r = await fetch(chrome.runtime.getURL('manifest.json'), { cache: 'no-store' });
+    version = (await r.json()).version;
+  } catch {
+    return;
+  }
+  if (!newerVersion(version, chrome.runtime.getManifest().version)) return;
+
+  await ensureRun();
+  const [dash] = await chrome.tabs.query({ url: chrome.runtime.getURL('dashboard.html') });
+  await chrome.storage.local.set({
+    resumeAfterReload: {
+      scanning: run.scanning,
+      homeWindowId: run.homeWindowId,
+      ownWindow: run.ownWindow,
+      windowId: run.windowId,
+      tabIds: Object.keys(run.tabs).map(Number),
+      dashboard: dash ? { windowId: dash.windowId, index: dash.index, active: dash.active } : null,
+    },
+  });
+  chrome.runtime.reload();
+}
+
+async function resumeAfterReload() {
+  const { resumeAfterReload: r } = await chrome.storage.local.get('resumeAfterReload');
+  if (!r) return;
+  await chrome.storage.local.remove('resumeAfterReload');
+
+  // Extension pages close on reload, so reopen the dashboard where it was.
+  let homeWindowId = r.homeWindowId;
+  if (r.dashboard) {
+    const url = chrome.runtime.getURL('dashboard.html');
+    const tab = await chrome.tabs
+      .create({ url, windowId: r.dashboard.windowId, index: r.dashboard.index, active: r.dashboard.active })
+      .catch(() => chrome.tabs.create({ url }));
+    if (homeWindowId == null || homeWindowId === r.dashboard.windowId) homeWindowId = tab.windowId;
+  }
+  if (!r.scanning) return;
+
+  // The old scan tabs survive the reload but nothing drives them any more.
+  if (r.ownWindow && r.windowId) await chrome.windows.remove(r.windowId).catch(() => {});
+  else if (r.tabIds.length) await chrome.tabs.remove(r.tabIds).catch(() => {});
+  const win = homeWindowId != null && (await chrome.windows.get(homeWindowId).catch(() => null));
+  await start(win ? homeWindowId : undefined);
 }
 
 // Brings the scan window in line with the current page list: retargets
@@ -455,5 +515,7 @@ chrome.alarms.get('config').then(a => {
 });
 chrome.alarms.onAlarm.addListener(alarm => {
   if (alarm.name === 'config') refreshConfig();
-  else ensureRun();
+  else ensureRun().then(checkDiskVersion);
 });
+
+resumeAfterReload();

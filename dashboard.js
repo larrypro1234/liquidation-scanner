@@ -4,6 +4,7 @@ const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS);
 let settings = { ...DEFAULT_SETTINGS };
 let config = { urls: [], rules: {} };
 let configCheck = null;
+let outdatedSince = null;
 let run = null;
 let leads = [];
 let listings = {};
@@ -213,7 +214,9 @@ function syncUrlBox() {
 function renderUpdateInfo() {
   const mine = chrome.runtime.getManifest().version;
   $('version').textContent = mine;
-  const outdated = newerVersion(config.latestExtensionVersion, mine);
+  // Give the Mac auto-updater 20 minutes before asking for a manual update.
+  const since = outdatedSince && outdatedSince.version === config.latestExtensionVersion ? outdatedSince.at : Date.now();
+  const outdated = newerVersion(config.latestExtensionVersion, mine) && Date.now() - since > 20 * 60 * 1000;
   $('updateBanner').hidden = !outdated;
   if (outdated) {
     $('latestVersion').textContent = config.latestExtensionVersion;
@@ -239,7 +242,7 @@ async function load() {
   const s = await chrome.storage.session.get(['run', 'listings']);
   settings = { ...DEFAULT_SETTINGS, ...(l.settings || {}) };
   config = await getConfig();
-  configCheck = (await chrome.storage.local.get('configCheck')).configCheck || null;
+  ({ configCheck = null, outdatedSince = null } = await chrome.storage.local.get(['configCheck', 'outdatedSince']));
   leads = l.leads || [];
   run = s.run || null;
   listings = s.listings || {};
@@ -262,6 +265,7 @@ chrome.storage.onChanged.addListener((ch, area) => {
   if (area === 'local' && ch.leads) { leads = ch.leads.newValue || []; renderLeads(); }
   if (area === 'local' && ch.settings) { settings = { ...DEFAULT_SETTINGS, ...(ch.settings.newValue || {}) }; renderHeader(); }
   if (area === 'local' && ch.configCheck) { configCheck = ch.configCheck.newValue || null; renderUpdateInfo(); }
+  if (area === 'local' && ch.outdatedSince) { outdatedSince = ch.outdatedSince.newValue || null; renderUpdateInfo(); }
   if (area === 'local' && ch.remoteConfig) {
     getConfig().then(c => {
       config = c;

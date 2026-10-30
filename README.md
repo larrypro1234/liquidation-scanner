@@ -2,13 +2,16 @@
 
 Watches the Amazon Bulk Liquidations pages and alerts you the moment a new lot appears or drops in price.
 
-## Install (once)
+## Install (once, Mac)
 
-1. Download [liquidation-scanner.zip](https://github.com/larrypro1234/liquidation-scanner/raw/main/dist/liquidation-scanner.zip) and unzip it somewhere permanent (e.g. `Documents/liquidation-scanner`).
-2. In Chrome open `chrome://extensions`.
-3. Turn on **Developer mode** (top right).
-4. Click **Load unpacked** and pick the unzipped `liquidation-scanner` folder.
-5. Pin the orange radar icon in the toolbar. Clicking it opens the dashboard.
+1. Open **Terminal** and paste:
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/larrypro1234/liquidation-scanner/main/install-mac.sh | bash
+   ```
+   This puts the scanner in `~/liquidation-scanner` and turns on automatic updates.
+2. In Chrome open `chrome://extensions` and turn on **Developer mode** (top right). Leave it on: Chrome needs it for the scanner to restart itself after an update.
+3. Click **Load unpacked** and pick the `liquidation-scanner` folder in your home folder.
+4. Pin the orange radar icon in the toolbar. Clicking it opens the dashboard.
 
 ## Use
 
@@ -40,11 +43,15 @@ If CAPTCHAs keep coming, raise the interval to 5–10 s or scan fewer pages (pag
 
 ## Updates
 
-- **Automatic:** every 5 minutes the scanner downloads `config.json` from this repo. It holds the page list and the rules for reading Amazon's pages. Changes to it reach your scanner by themselves, even mid-scan, with nothing to reinstall.
-- **New features:** when `latestExtensionVersion` in `config.json` is newer than your copy, the dashboard shows an update banner and you get a notification. Download the zip, replace your folder, and click **Reload scanner**. Your settings and leads are kept.
+Nothing to do. Two things keep the scanner current:
+
+- **Page list and Amazon reading rules:** every 5 minutes the scanner downloads `config.json` from this repo and uses it right away, even mid-scan.
+- **New code:** a background job on the Mac (installed by `install-mac.sh`) downloads `dist/liquidation-scanner.zip` every 5 minutes. When it contains a newer version, the job swaps the files in. The scanner notices, restarts itself, reopens the dashboard, and resumes the scan.
+
+If a new version still hasn't arrived after 20 minutes (e.g. the installer was never run), the dashboard shows manual update steps.
 
 ### Releasing a new version (maintainer)
 
-1. Bump `version` in `manifest.json`.
+1. Bump `version` in `manifest.json` (every release needs a new number, or Macs won't pick it up).
 2. Rebuild `dist/liquidation-scanner.zip` (zip of the extension files inside a `liquidation-scanner/` folder, without `dist/` and `.git/`).
 3. Set `latestExtensionVersion` in `config.json` to the same version and push.
