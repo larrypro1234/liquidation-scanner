@@ -280,6 +280,7 @@ const MAX_BACKOFF_MS = 60000;
 const BACKOFF_STEP_GAP_MS = 20000;   // at most one step up per 20 s
 const CALM_STEP_DOWN_MS = 5 * 60000;
 const MANIFEST_PAUSE_MS = 3 * 60000;
+const RESTART_MEMORY_MS = 30 * 60000;  // a restart within this long keeps the slower speed
 
 function noteThrottle() {
   const now = Date.now();
@@ -291,6 +292,8 @@ function noteThrottle() {
   }
   run.calmSince = now;
   run.manifestPausedUntil = now + MANIFEST_PAUSE_MS;
+  // Remembered so a restart doesn't go straight back to full speed.
+  chrome.storage.local.set({ lastThrottle: { level: run.backoff, at: now } });
   saveRun();
 }
 
@@ -300,6 +303,7 @@ function noteCalm() {
   if (now - (run.calmSince || now) >= CALM_STEP_DOWN_MS) {
     run.backoff--;
     run.calmSince = now;
+    chrome.storage.local.set({ lastThrottle: { level: run.backoff, at: now } });
     saveRun();
   }
 }
@@ -560,6 +564,17 @@ async function startScan(homeWindowId) {
   m.listings = {};
   const ownWindow = m.settings.separateWindow || homeWindowId == null;
   run = { ...IDLE, scanning: true, ownWindow, homeWindowId, startedAt: Date.now(), tabs: {} };
+  // If Amazon pushed back recently, start at that slower speed instead of full speed.
+  const { lastThrottle } = await chrome.storage.local.get('lastThrottle');
+  if (lastThrottle && lastThrottle.level && Date.now() - lastThrottle.at < RESTART_MEMORY_MS) {
+    run.backoff = lastThrottle.level;
+    run.calmSince = Date.now();
+    run.lastBackoffStepAt = Date.now();
+    run.manifestPausedUntil = Date.now() + MANIFEST_PAUSE_MS;
+  }
+  // Open the pages one by one, spread over one refresh interval, not all at once.
+  const stagger = Math.min(1500, Math.max(250, Math.round((await intervalMs()) / urls.length)));
+  const pause = () => new Promise(r => setTimeout(r, stagger));
   const track = (tab, i) => {
     run.tabs[tab.id] = newTabState(i, urls[i]);
     // Keep Chrome from discarding background scan tabs to save memory.
@@ -568,15 +583,20 @@ async function startScan(homeWindowId) {
   };
 
   if (ownWindow) {
-    const win = await chrome.windows.create({ url: urls, focused: false });
+    const win = await chrome.windows.create({ url: urls[0], focused: false });
     if (m.settings.minimized) chrome.windows.update(win.id, { state: 'minimized' }).catch(() => {});
     run.windowId = win.id;
-    win.tabs.forEach(track);
+    track(win.tabs[0], 0);
+    for (let i = 1; i < urls.length; i++) {
+      await pause();
+      track(await chrome.tabs.create({ windowId: win.id, url: urls[i], active: false }), i);
+    }
     run.manifestTab = (await chrome.tabs.create({ windowId: win.id, url: 'about:blank', active: false })).id;
   } else {
     // Open the pages next to the dashboard, bundled into one "Scanner" tab group.
     run.windowId = homeWindowId;
     for (let i = 0; i < urls.length; i++) {
+      if (i) await pause();
       track(await chrome.tabs.create({ windowId: homeWindowId, url: urls[i], active: false }), i);
     }
     run.manifestTab = (await chrome.tabs.create({ windowId: homeWindowId, url: 'about:blank', active: false })).id;

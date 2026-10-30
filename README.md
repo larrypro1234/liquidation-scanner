@@ -16,7 +16,7 @@ Watches the Amazon Bulk Liquidations pages and alerts you the moment a new lot a
 ## Use
 
 1. Click the icon, then **Start scanning**.
-2. All 20 pages open as tabs next to the dashboard, grouped under an orange **Scanner** tab group (Settings can put them in a separate window instead). Each page is re-loaded every 3 seconds and read as soon as its HTML arrives.
+2. All 20 pages open as tabs next to the dashboard, grouped under an orange **Scanner** tab group (Settings can put them in a separate window instead). The pages open one by one, then each is re-loaded every 5 seconds (slower if Amazon pushes back) and read as soon as its HTML arrives.
 3. The first load of each page is the baseline. After that, anything that shows up for the first time is a **NEW** lead. Anything priced below the lowest price seen for it is a **PRICE DROP**.
 4. Leads appear at the top of the dashboard, with a desktop notification and a chime. Click a notification to open the item.
 5. **All listings** shows every lot currently on the pages. You can sort by biggest % off retail, lowest price, price per unit, or newest.
@@ -33,7 +33,7 @@ Keep the dashboard tab open if you want the sound alerts.
 
 ## CAPTCHA
 
-Twenty pages every 3 seconds is about 400 page loads a minute. Amazon will sometimes answer with a "not a robot" CAPTCHA. When that happens the scanner:
+Twenty pages every 5 seconds is about 240 page loads a minute. Amazon may answer with a "not a robot" CAPTCHA or its "SORRY, something went wrong" dog page (rate limiting). On the dog page the scanner slows itself down (up to 60 s per page) and speeds back up after 5 calm minutes; a restart within 30 minutes keeps the slower speed. On a CAPTCHA the scanner:
 
 - stops every reload immediately,
 - brings the CAPTCHA tab to the front and notifies you,
