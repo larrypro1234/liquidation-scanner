@@ -1,6 +1,6 @@
 importScripts('shared.js');
 
-const IDLE = { scanning: false, paused: null, windowId: null, homeWindowId: null, captchaTab: null, startedAt: 0, scans: 0, leads: 0, tabs: {} };
+const IDLE = { scanning: false, paused: null, windowId: null, ownWindow: false, groupId: null, homeWindowId: null, captchaTab: null, startedAt: 0, scans: 0, leads: 0, tabs: {} };
 const MAX_SEEN = 20000;
 const MAX_LEADS = 300;
 const LOAD_TIMEOUT_MS = 25000;
@@ -130,6 +130,7 @@ async function applyUrls() {
     const tab = await chrome.tabs.create({ windowId: run.windowId, url: urls[i], active: false });
     run.tabs[tab.id] = newTabState(i, urls[i]);
     chrome.tabs.update(tab.id, { autoDiscardable: false }).catch(() => {});
+    if (run.groupId != null) chrome.tabs.group({ groupId: run.groupId, tabIds: tab.id }).catch(() => {});
     scheduleNext(tab.id, LOAD_TIMEOUT_MS);
   }
   saveRun();
@@ -320,16 +321,32 @@ async function start(homeWindowId) {
   const urls = effectiveUrls(m.settings, m.config);
   if (!urls.length) throw new Error('No amazon.com URLs in the page list.');
 
-  const win = await chrome.windows.create({ url: urls, focused: false });
-  if (m.settings.minimized) chrome.windows.update(win.id, { state: 'minimized' }).catch(() => {});
-  run = { ...IDLE, scanning: true, windowId: win.id, homeWindowId, startedAt: Date.now(), tabs: {} };
   m.listings = {};
-  win.tabs.forEach((tab, i) => {
+  const ownWindow = m.settings.separateWindow || homeWindowId == null;
+  run = { ...IDLE, scanning: true, ownWindow, homeWindowId, startedAt: Date.now(), tabs: {} };
+  const track = (tab, i) => {
     run.tabs[tab.id] = newTabState(i, urls[i]);
     // Keep Chrome from discarding background scan tabs to save memory.
     chrome.tabs.update(tab.id, { autoDiscardable: false }).catch(() => {});
     scheduleNext(tab.id, LOAD_TIMEOUT_MS);
-  });
+  };
+
+  if (ownWindow) {
+    const win = await chrome.windows.create({ url: urls, focused: false });
+    if (m.settings.minimized) chrome.windows.update(win.id, { state: 'minimized' }).catch(() => {});
+    run.windowId = win.id;
+    win.tabs.forEach(track);
+  } else {
+    // Open the pages next to the dashboard, bundled into one "Scanner" tab group.
+    run.windowId = homeWindowId;
+    for (let i = 0; i < urls.length; i++) {
+      track(await chrome.tabs.create({ windowId: homeWindowId, url: urls[i], active: false }), i);
+    }
+    try {
+      run.groupId = await chrome.tabs.group({ tabIds: Object.keys(run.tabs).map(Number), createProperties: { windowId: homeWindowId } });
+      await chrome.tabGroups.update(run.groupId, { title: 'Scanner', color: 'orange' });
+    } catch {}
+  }
   chrome.action.setBadgeText({ text: '' });
   saveRun();
   saveMem();
@@ -338,10 +355,13 @@ async function start(homeWindowId) {
 async function stop(closeWindow = true) {
   await ensureRun();
   clearTimers();
-  const wid = run.windowId;
+  const { windowId, ownWindow } = run;
+  const tabIds = Object.keys(run.tabs).map(Number);
   run = { ...IDLE, scans: run.scans, leads: run.leads };
   await chrome.storage.session.set({ run });
-  if (closeWindow && wid) await chrome.windows.remove(wid).catch(() => {});
+  if (!closeWindow) return;
+  if (ownWindow && windowId) await chrome.windows.remove(windowId).catch(() => {});
+  else if (tabIds.length) await chrome.tabs.remove(tabIds).catch(() => {});
 }
 
 // ---------- events ----------
@@ -383,6 +403,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       await chrome.tabs.update(run.captchaTab, { active: true });
     } else if (msg.type === 'showWindow' && run.windowId) {
       await chrome.windows.update(run.windowId, { focused: true, state: 'normal' });
+      const first = Object.entries(run.tabs).sort((a, b) => a[1].idx - b[1].idx)[0];
+      if (!run.ownWindow && first) await chrome.tabs.update(+first[0], { active: true });
     } else if (msg.type === 'checkUpdates') {
       return refreshConfig();
     } else if (msg.type === 'clearBadge') {
