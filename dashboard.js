@@ -126,9 +126,10 @@ function renderHeader() {
   pages.innerHTML = '';
   tabs.forEach(t => {
     const d = document.createElement('div');
-    d.className = 'pg ' + t.state;
+    d.className = 'pg ' + ((paused === 'cooldown' || paused === 'probe') && !t.lastScan ? 'throttled' : t.state);
     d.title = (t.error ? 'Error: ' + t.error + '\n' : '') + t.url;
-    const label = t.state === 'captcha' ? 'CAPTCHA' : t.state === 'error' ? 'error' : t.state === 'throttled' ? 'Amazon busy' : `${t.count} items`;
+    const resting = (paused === 'cooldown' || paused === 'probe') && !t.lastScan;
+    const label = resting ? 'waiting' : t.state === 'captcha' ? 'CAPTCHA' : t.state === 'error' ? 'error' : t.state === 'throttled' ? 'Amazon busy' : `${t.count} items`;
     d.innerHTML = `<b>Page ${t.idx + 1}</b><span>${label}</span><br><span>${ago(t.lastScan)}</span>`;
     pages.appendChild(d);
   });

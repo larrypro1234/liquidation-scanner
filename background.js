@@ -711,8 +711,9 @@ async function stop(closeWindow = true) {
 // ---------- events ----------
 
 // Scrape as soon as the HTML is parsed instead of waiting for every image to load.
-chrome.webNavigation.onDOMContentLoaded.addListener(({ tabId, frameId }) => {
-  if (frameId !== 0) return;
+chrome.webNavigation.onDOMContentLoaded.addListener(({ tabId, frameId, url }) => {
+  // Empty placeholder tabs (about:blank while resting) aren't scans.
+  if (frameId !== 0 || !/^https:/.test(url)) return;
   ensureRun().then(() => {
     if (run.tabs[tabId]) onTabLoaded(tabId);
     else if (run.scanning && tabId === run.manifestTab) onManifestLoaded(tabId);
