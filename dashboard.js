@@ -54,8 +54,12 @@ function beep() {
 
 // ---------- rendering ----------
 
+let wasScanning = null;
 function renderHeader() {
   const scanning = run && run.scanning;
+  // The empty-state text in the leads list depends on whether we're scanning.
+  if (wasScanning !== null && wasScanning !== !!scanning && !leads.length) renderLeads();
+  wasScanning = !!scanning;
   const paused = scanning && run.paused;
   const pageUrls = effectiveUrls(settings, config);
   const pageN = pageUrls.length;
