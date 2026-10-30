@@ -376,8 +376,8 @@ function resume() {
 
 // ---------- lot manifests ----------
 // One extra tab walks through lot pages (/dp/ASIN) and reads each "Lot Manifest"
-// table once. New drops go first, then unbanned lots in page order; lots marked
-// "seen it" and banned lots come last / not at all.
+// table once. New drops go first, then the rest in page order. Banned lots and
+// lots marked "Seen it" are never read.
 
 let manifestTimer = null;
 let manifestAsin = null;     // lot the manifest tab is loading right now
@@ -392,8 +392,10 @@ async function pickManifestAsin() {
   const m = await mem();
   const { dismissed = {} } = await chrome.storage.local.get('dismissed');
   const onPages = Object.keys(m.listings).sort((a, b) => a - b).flatMap(k => m.listings[k]);
-  const want = it => !m.manifests[it.asin] && (manifestFails[it.asin] || 0) < 2 && passesFilters(it, m.settings);
-  const pick = m.leads.find(want) || onPages.find(it => want(it) && !dismissed[it.asin]) || onPages.find(want);
+  // Skip lots marked "Seen it", unless they've dropped in price since.
+  const seen = it => dismissed[it.asin] && !(it.foundAt > dismissed[it.asin]);
+  const want = it => !m.manifests[it.asin] && (manifestFails[it.asin] || 0) < 2 && passesFilters(it, m.settings) && !seen(it);
+  const pick = m.leads.find(want) || onPages.find(want);
   return pick ? pick.asin : null;
 }
 
