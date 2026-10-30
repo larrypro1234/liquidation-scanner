@@ -12,6 +12,8 @@ let listings = {};
 let freshAsins = new Set();
 let audioCtx = null;
 let unseenLeads = 0;
+let dismissed = {};   // asin -> when "Seen it" was clicked
+let manifests = {};   // asin -> lot manifest read from its Amazon page
 let banMenuAsin = null; // listing whose Ban menu is open; lists hold still while it is
 
 // ---------- helpers ----------
@@ -151,6 +153,15 @@ function itemEl(it, { lead = false } = {}) {
     if (banMenuAsin) el.querySelector('.body').appendChild(banMenu(it, info));
   });
   meta.appendChild(banBtn);
+
+  const seenBtn = document.createElement('button');
+  seenBtn.className = 'seen-btn';
+  const isSeen = !!dismissed[it.asin] && !(lead && it.foundAt > dismissed[it.asin]);
+  seenBtn.textContent = isSeen ? '↺ Back to New leads' : '✓ Seen it';
+  seenBtn.addEventListener('click', () => (isSeen ? unsee([it.asin]) : see(it)));
+  meta.appendChild(seenBtn);
+
+  el.querySelector('.body').appendChild(manifestEl(it));
   if (banMenuAsin === it.asin) el.querySelector('.body').appendChild(banMenu(it, info));
 
   el.querySelector('.price').textContent = fmt$(it.price);
@@ -162,6 +173,67 @@ function itemEl(it, { lead = false } = {}) {
   if (hot) el.classList.add('hot');
   if (!lead && !it.matches) el.classList.add('nomatch');
   return el;
+}
+
+// ---------- seen it ----------
+
+async function see(it) {
+  dismissed = { ...dismissed, [it.asin]: Date.now() };
+  await chrome.storage.local.set({ dismissed });
+  toast('Moved to All listings', () => unsee([it.asin]));
+}
+
+async function unsee(asins) {
+  dismissed = { ...dismissed };
+  asins.forEach(a => delete dismissed[a]);
+  await chrome.storage.local.set({ dismissed });
+}
+
+// ---------- manifests ----------
+
+function manifestEl(it) {
+  const box = document.createElement('div');
+  box.className = 'manifest';
+  const mf = manifests[it.asin];
+  if (!mf) {
+    box.classList.add('muted');
+    box.textContent = run && run.scanning ? 'Manifest: reading the lot page…' : 'Manifest: loads while scanning';
+    return box;
+  }
+  if (!mf.found || !mf.top || !mf.top.length) {
+    box.classList.add('muted');
+    box.textContent = 'No manifest on this lot’s page';
+    return box;
+  }
+  const head = document.createElement('div');
+  head.className = 'manifest-head';
+  head.textContent = `Top ${mf.top.length} of ${mf.count} products by qty` + (mf.totalQty ? ` · ${mf.totalQty.toLocaleString()} units listed` : '');
+  box.appendChild(head);
+  const table = document.createElement('table');
+  mf.top.forEach(r => {
+    const tr = table.insertRow();
+    tr.insertCell().textContent = r.qty + '×';
+    const title = tr.insertCell();
+    if (/^[A-Z0-9]{10}$/.test(r.asin)) {
+      const a = document.createElement('a');
+      a.href = `https://www.amazon.com/dp/${r.asin}`;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = r.title || r.asin;
+      title.appendChild(a);
+    } else {
+      title.textContent = r.title;
+    }
+    title.title = r.title;
+    tr.insertCell().textContent = r.brand;
+    tr.insertCell().textContent = r.type;
+    tr.insertCell().textContent = r.price != null ? fmt$(r.price) + ' ea' : '';
+    tr.cells[0].className = 'q';
+    tr.cells[1].className = 't';
+    tr.cells[4].className = 'p';
+  });
+  box.appendChild(table);
+  return box;
 }
 
 // ---------- banning ----------
@@ -266,7 +338,11 @@ function renderLeads() {
   const items = [];
   drops.forEach((l, asin) => items.push({ ...l, ...(onPages.get(asin) || {}), reason: l.reason, oldPrice: l.oldPrice, foundAt: l.foundAt, drop: true }));
   onPages.forEach((it, asin) => { if (!drops.has(asin)) items.push(it); });
-  const shown = items.filter(it => passesFilters(it, settings)).map(it => ({ ...it, matches: true }));
+  const unseen = it => !dismissed[it.asin] || (it.drop && it.foundAt > dismissed[it.asin]);
+  const shown = items.filter(it => passesFilters(it, settings) && unseen(it)).map(it => ({ ...it, matches: true }));
+  const seenCount = items.filter(it => passesFilters(it, settings) && !unseen(it)).length;
+  $('seenInfo').hidden = !seenCount;
+  $('seenCount').textContent = seenCount;
   shown.sort((a, b) => (b.drop ? 1 : 0) - (a.drop ? 1 : 0) || (b.foundAt || b.firstSeen || 0) - (a.foundAt || a.firstSeen || 0));
 
   $('leadCount').textContent = shown.length;
@@ -274,7 +350,7 @@ function renderLeads() {
   box.innerHTML = '';
   if (!shown.length) {
     box.innerHTML = `<div class="empty">${items.length
-      ? 'Every lot on the pages is banned by your Settings filters.'
+      ? 'Nothing left here: every lot is banned or marked “seen it”.'
       : run && run.scanning
         ? 'Loading the pages…'
         : 'Press <b>Start scanning</b> to open the pages and start watching for new drops.'}</div>`;
@@ -389,7 +465,8 @@ async function load() {
   const s = await chrome.storage.session.get(['run', 'listings']);
   settings = { ...DEFAULT_SETTINGS, ...(l.settings || {}) };
   config = await getConfig();
-  ({ configCheck = null, outdatedSince = null, justUpdated = null } = await chrome.storage.local.get(['configCheck', 'outdatedSince', 'justUpdated']));
+  ({ configCheck = null, outdatedSince = null, justUpdated = null, dismissed = {}, manifests = {} } =
+    await chrome.storage.local.get(['configCheck', 'outdatedSince', 'justUpdated', 'dismissed', 'manifests']));
   leads = l.leads || [];
   run = s.run || null;
   listings = s.listings || {};
@@ -411,6 +488,12 @@ chrome.storage.onChanged.addListener((ch, area) => {
     listingsT = setTimeout(() => { if (!banMenuAsin) { renderListings(); renderLeads(); } }, 400);
   }
   if (area === 'local' && ch.leads) { leads = ch.leads.newValue || []; renderLeads(); }
+  if (area === 'local' && ch.dismissed) { dismissed = ch.dismissed.newValue || {}; renderLeads(); renderListings(); }
+  if (area === 'local' && ch.manifests) {
+    manifests = ch.manifests.newValue || {};
+    clearTimeout(listingsT);
+    listingsT = setTimeout(() => { if (!banMenuAsin) { renderListings(); renderLeads(); } }, 400);
+  }
   if (area === 'local' && ch.settings) {
     settings = { ...DEFAULT_SETTINGS, ...(ch.settings.newValue || {}) };
     if (document.activeElement !== $('exclude')) $('exclude').value = settings.exclude;
@@ -460,6 +543,7 @@ $('resume').addEventListener('click', () => send('resume'));
 $('showCaptcha').addEventListener('click', () => send('showCaptcha'));
 $('showWindow').addEventListener('click', () => send('showWindow'));
 
+$('bringBack').addEventListener('click', () => unsee(Object.keys(dismissed)));
 $('clearLeads').addEventListener('click', async () => {
   await chrome.storage.local.remove('leads');
   send('clearBadge');

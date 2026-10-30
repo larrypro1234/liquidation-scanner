@@ -229,3 +229,82 @@ function scrapePage(rules) {
   }
   return out;
 }
+
+// Injected into the manifest tab (an Amazon /dp/ lot page). Reads the "Lot
+// Manifest" table and returns the top rows by quantity. Self-contained like
+// scrapePage; page-specific bits come from rules.manifest in config.json.
+async function scrapeManifest(rules) {
+  const R = (rules && rules.manifest) || {};
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const norm = s => String(s || '').replace(/\s+/g, ' ').trim();
+  const re = (src, flags = 'i') => { try { return src ? new RegExp(src, flags) : null; } catch { return null; } };
+  const num = s => { const m = String(s || '').replace(/,/g, '').match(/-?\d+(?:\.\d+)?/); return m ? parseFloat(m[0]) : null; };
+
+  const bodyText = () => (document.body && document.body.innerText) || '';
+  if (document.querySelector('form[action*="validateCaptcha"]') || /robot check/i.test(document.title) ||
+      /not a robot|enter the characters you see/i.test(bodyText().slice(0, 5000))) {
+    return { captcha: true };
+  }
+
+  const cols = R.columns || {};
+  const headerRe = re(R.tableHeaderPattern || 'qty|quantity');
+  const cellsOf = (row, sel) => [...row.querySelectorAll(sel)].map(c => norm(c.textContent));
+  const findTable = () => {
+    for (const t of document.querySelectorAll(R.tableSelector || 'table, [role="table"], [role="grid"]')) {
+      const head = cellsOf(t, 'th, [role="columnheader"]').join(' | ');
+      if (headerRe && headerRe.test(head)) return t;
+    }
+    return null;
+  };
+
+  // The manifest may sit below the fold, so nudge the page down while waiting for it.
+  let table = null;
+  for (let i = 0; i < 16 && !(table = findTable()); i++) {
+    window.scrollTo(0, (document.body.scrollHeight * (i + 1)) / 16);
+    await sleep(500);
+  }
+  if (!table) return { found: false, heading: /lot manifest/i.test(bodyText()) };
+
+  const parse = () => {
+    const headers = cellsOf(table, 'th, [role="columnheader"]').map(h => h.toLowerCase());
+    const col = key => { const r = re(cols[key]); return r ? headers.findIndex(h => r.test(h)) : -1; };
+    const ix = {};
+    ['condition', 'type', 'brand', 'asin', 'title', 'qty', 'price', 'total'].forEach(k => (ix[k] = col(k)));
+    const get = (cells, k) => (ix[k] >= 0 ? cells[ix[k]] || '' : '');
+    return [...table.querySelectorAll('tr, [role="row"]')]
+      .map(r => cellsOf(r, 'td, [role="cell"], [role="gridcell"]'))
+      .filter(c => c.length >= 3)
+      .map(c => ({
+        condition: get(c, 'condition'),
+        type: get(c, 'type'),
+        brand: get(c, 'brand'),
+        asin: get(c, 'asin'),
+        title: get(c, 'title').slice(0, 200),
+        qty: num(get(c, 'qty')) || 0,
+        price: num(get(c, 'price')),
+        total: num(get(c, 'total')),
+      }));
+  };
+
+  let rows = parse();
+  // "See all (37)": if fewer rows are in the page than that, open the full list.
+  const seeAllRe = re(R.seeAllPattern || 'see all\\s*\\((\\d+)\\)');
+  const declaredMatch = seeAllRe && bodyText().match(seeAllRe);
+  const declared = declaredMatch ? parseInt(declaredMatch[1], 10) : null;
+  if (declared && rows.length < declared) {
+    const link = [...document.querySelectorAll('a, button, span[role="button"]')].find(e => seeAllRe.test(norm(e.textContent)));
+    const href = link && link.getAttribute('href');
+    if (link && (!href || href.startsWith('#') || href.startsWith('javascript'))) {
+      link.click();
+      for (let i = 0; i < 6 && rows.length < declared; i++) { await sleep(500); rows = parse(); }
+    }
+  }
+
+  const top = rows.slice().sort((a, b) => b.qty - a.qty).slice(0, R.topN || 5);
+  return {
+    found: true,
+    count: Math.max(rows.length, declared || 0),
+    totalQty: rows.reduce((a, r) => a + r.qty, 0),
+    top,
+  };
+}

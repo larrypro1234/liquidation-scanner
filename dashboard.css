@@ -168,3 +168,16 @@ button { font: inherit; cursor: pointer; border-radius: 8px; }
 .banned-chip:hover { background: var(--bad); color: #fff; }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 13px; box-shadow: 0 6px 24px rgba(0,0,0,.25); z-index: 10; }
 .toast .link { color: inherit; font-weight: 700; font-size: 13px; }
+
+.seen-btn { background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 5px; padding: 0 6px; font-size: 12px; }
+.seen-btn:hover { color: var(--ok); border-color: var(--ok); }
+.manifest { margin-top: 8px; font-size: 12px; }
+.manifest-head { font-weight: 650; color: var(--muted); margin-bottom: 2px; }
+.manifest table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+.manifest td { padding: 2px 8px 2px 0; border-top: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+.manifest td.q { width: 52px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.manifest td.t { width: 50%; color: var(--text); }
+.manifest td.t a { color: inherit; text-decoration: none; }
+.manifest td.t a:hover { text-decoration: underline; }
+.manifest td.p { width: 80px; text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) { .manifest td:nth-child(3), .manifest td:nth-child(4) { display: none; } }

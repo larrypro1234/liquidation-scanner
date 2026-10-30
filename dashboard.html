@@ -68,7 +68,8 @@
 
   <section id="tab-leads" class="panel">
     <div class="toolbar">
-      <p class="hint">Every lot on the pages except the ones you ban in Settings. Lots that drop while you're scanning are tagged <b>NEW</b> (or <b>PRICE DROP</b>) and go to the top.</p>
+      <p class="hint">Every lot on the pages except the ones you ban or mark <b>Seen it</b>. Lots that drop while you're scanning are tagged <b>NEW</b> (or <b>PRICE DROP</b>) and go to the top.</p>
+      <span id="seenInfo" class="muted" hidden><span id="seenCount">0</span> marked seen · <button id="bringBack" class="link">Bring them all back</button></span>
       <button id="clearLeads" class="ghost small">Clear NEW tags</button>
     </div>
     <div id="leads" class="list"></div>
