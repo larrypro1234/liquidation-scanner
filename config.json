@@ -90,7 +90,7 @@
     "titlePattern": "^\\s*(?<units>\\d[\\d,]*)\\s*units?\\s*\\(\\s*est\\.?\\s*(?<pallets>[\\d.]+)\\s*pallets?\\s*\\)\\s*-\\s*(?<type>.+?)\\s*-\\s*(?<category>.+?)(?:\\s+lot)?\\s*$",
     "manifest": {
       "topN": 5,
-      "delayMs": 5000,
+      "delayMs": 10000,
       "tableSelector": "table, [role=\"table\"], [role=\"grid\"]",
       "tableHeaderPattern": "qty|quantity",
       "seeAllPattern": "see all\\s*\\((\\d+)\\)",
@@ -116,6 +116,6 @@
       "script",
       "sub_frame"
     ],
-    "minGapMs": 1200
+    "minGapMs": 3000
   }
 }
