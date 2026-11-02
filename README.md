@@ -27,7 +27,7 @@ For the notification to be noticeable on a Mac: System Settings → Notification
 ## Settings
 
 - **Pages to scan**: one URL per line. The default is pages 1–20 of the Bulk Liquidations list (`/s?i=specialty-aps&srs=23511005011&s=popularity-rank&fs=true&page=N`).
-- **Load one Amazon page every**: seconds between page loads, across all pages together (default 3, minimum 3; `performance.minGapMs` in config.json is the floor).
+- **Speed knob** (top of the dashboard): seconds between page loads, across all pages together, from 2 (faster) to 10 (gentler); default 3. Changes apply on the next page. `performance.minGapMs` in config.json is the hard floor.
 - **Max price / Min % off / keywords**: only items that pass these filters count as leads.
 - **Auto-open new leads**: opens each new lead in a background tab so you can buy fast.
 

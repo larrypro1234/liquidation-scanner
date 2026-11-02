@@ -460,6 +460,19 @@ function fillSettingsForm() {
     else el.value = settings[k];
   });
   syncUrlBox();
+  renderSpeed();
+}
+
+// ---------- speed knob ----------
+// Seconds between Amazon page loads (one page at a time). Saved when you let go
+// of the slider; the scanner picks it up on its next page.
+
+function renderSpeed() {
+  const sec = parseFloat($('intervalSec').value) || settings.intervalSec;
+  const pages = effectiveUrls(settings, config).length;
+  const cycle = Math.round(pages * sec);
+  $('speedReadout').textContent = `one page every ${sec.toFixed(1)} s · each page checked about every ${cycle} s`;
+  $('speedWarn').hidden = sec >= 3;
 }
 
 // With auto-update on, the box shows the GitHub list read-only.
@@ -549,6 +562,7 @@ chrome.storage.onChanged.addListener((ch, area) => {
   if (area === 'local' && ch.settings) {
     settings = { ...DEFAULT_SETTINGS, ...(ch.settings.newValue || {}) };
     if (document.activeElement !== $('exclude')) $('exclude').value = settings.exclude;
+    if (document.activeElement !== $('intervalSec')) { $('intervalSec').value = settings.intervalSec; renderSpeed(); }
     renderBanned();
     renderHeader();
     renderLeads();
@@ -602,6 +616,14 @@ $('showWindow').addEventListener('click', () => send('showWindow'));
 
 $('testAlarm').addEventListener('click', () => send('testAlarm'));
 
+$('intervalSec').addEventListener('input', renderSpeed);
+$('intervalSec').addEventListener('change', async () => {
+  const intervalSec = Math.min(10, Math.max(2, parseFloat($('intervalSec').value) || 3));
+  settings = { ...settings, intervalSec };
+  await chrome.storage.local.set({ settings });
+  toast(`Speed set: one page every ${intervalSec.toFixed(1)} s`);
+});
+
 $('bringBack').addEventListener('click', () => unsee(Object.keys(dismissed)));
 $('clearLeads').addEventListener('click', async () => {
   await chrome.storage.local.remove('leads');
@@ -638,10 +660,10 @@ $('settings').addEventListener('submit', async e => {
     if (!el) return;
     if (k === 'urls' && $('autoUrls').checked) return;
     if (el.type === 'checkbox') next[k] = el.checked;
-    else if (el.type === 'number') next[k] = Math.max(0, parseFloat(el.value) || 0);
+    else if (el.type === 'number' || el.type === 'range') next[k] = Math.max(0, parseFloat(el.value) || 0);
     else next[k] = el.value;
   });
-  next.intervalSec = Math.max(3, next.intervalSec || 3);
+  next.intervalSec = Math.min(10, Math.max(2, next.intervalSec || 3));
   if (!next.autoUrls && !parseUrls(next.urls).length) { alert('Add at least one https://www.amazon.com/ URL.'); return; }
   await chrome.storage.local.set({ settings: next });
   $('saved').hidden = false;
