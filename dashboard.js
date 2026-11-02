@@ -44,25 +44,6 @@ function send(type) {
   return chrome.runtime.sendMessage({ type });
 }
 
-function beep() {
-  if (!settings.sound) return;
-  try {
-    audioCtx = audioCtx || new AudioContext();
-    const t0 = audioCtx.currentTime;
-    [880, 1320, 1760].forEach((f, i) => {
-      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-      o.frequency.value = f;
-      o.type = 'triangle';
-      g.gain.setValueAtTime(0.0001, t0 + i * 0.12);
-      g.gain.exponentialRampToValueAtTime(0.25, t0 + i * 0.12 + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.12 + 0.11);
-      o.connect(g).connect(audioCtx.destination);
-      o.start(t0 + i * 0.12);
-      o.stop(t0 + i * 0.12 + 0.12);
-    });
-  } catch {}
-}
-
 // ---------- rendering ----------
 
 let wasScanning = null;
@@ -588,10 +569,7 @@ chrome.storage.onChanged.addListener((ch, area) => {
 chrome.runtime.onMessage.addListener(msg => {
   if (msg.type === 'leads') {
     msg.leads.forEach(l => freshAsins.add(l.asin + l.foundAt));
-    beep();
     if (document.hidden) { unseenLeads += msg.leads.length; updateTitle(); }
-  } else if (msg.type === 'captcha') {
-    beep();
   }
 });
 
@@ -621,6 +599,8 @@ $('showWindow').addEventListener('click', () => send('showWindow'));
     if (redrawPending && !banMenuAsin) { redrawPending = false; renderListings(); renderLeads(); }
   });
 });
+
+$('testAlarm').addEventListener('click', () => send('testAlarm'));
 
 $('bringBack').addEventListener('click', () => unsee(Object.keys(dismissed)));
 $('clearLeads').addEventListener('click', async () => {

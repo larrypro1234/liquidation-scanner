@@ -487,8 +487,27 @@ async function openForBuying(url, active = true) {
   return chrome.windows.create({ url, focused: active });
 }
 
+// ---------- loud alerts ----------
+// The siren plays from an offscreen document so it works with the dashboard closed.
+
+async function ensureSoundPlayer() {
+  const url = chrome.runtime.getURL('offscreen.html');
+  const open = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'], documentUrls: [url] }).catch(() => []);
+  if (open.length) return;
+  await chrome.offscreen.createDocument({ url: 'offscreen.html', reasons: ['AUDIO_PLAYBACK'], justification: 'Sound the alarm when a new liquidation lot appears.' })
+    .catch(() => {}); // already being created by a parallel call
+}
+
+async function soundAlarm(kind) {
+  const { settings } = await mem();
+  if (!settings.sound) return;
+  await ensureSoundPlayer();
+  chrome.runtime.sendMessage({ target: 'offscreen', type: 'alarm', kind }).catch(() => {});
+}
+
 function announce(found, s) {
   chrome.runtime.sendMessage({ type: 'leads', leads: found }).catch(() => {});
+  soundAlarm(found.some(l => l.reason === 'new') ? 'new' : 'drop');
   chrome.action.setBadgeBackgroundColor({ color: '#d92d20' });
   chrome.action.setBadgeText({ text: String(Math.min(999, run.leads)) });
 
@@ -503,10 +522,12 @@ function announce(found, s) {
       chrome.notifications.create(`lead|${l.asin}|${Date.now()}`, {
         type: 'basic',
         iconUrl: 'icons/icon128.png',
-        title: l.reason === 'price-drop' ? 'Price drop' : 'New liquidation lead',
+        title: l.reason === 'price-drop' ? '📉 PRICE DROP' : '🚨 NEW LIQUIDATION LOT',
         message: l.title.slice(0, 200),
         contextMessage: bits.join(' · '),
         priority: 2,
+        requireInteraction: true, // stays on screen until you click it
+        silent: false,
       });
     });
     if (found.length > 3) {
@@ -534,6 +555,7 @@ function onCaptcha(tabId) {
       message: 'Scanning is paused. Solve it in the scanner window and scanning resumes by itself.',
     });
     chrome.runtime.sendMessage({ type: 'captcha' }).catch(() => {});
+    soundAlarm('notice');
     chrome.windows.update(run.windowId, { focused: true, state: 'normal' }).catch(() => {});
     chrome.tabs.update(tabId, { active: true }).catch(() => {});
     // Let the CAPTCHA picture load, then show it again.
@@ -741,6 +763,8 @@ chrome.windows.onRemoved.addListener(windowId => {
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (msg.target === 'offscreen') return;   // meant for the sound player
+  if (msg.type === 'alarm-played') { chrome.storage.session.set({ lastAlarm: msg }); return; }
   (async () => {
     await ensureRun();
     if (msg.type === 'start') await start(sender.tab && sender.tab.windowId);
@@ -755,6 +779,13 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       if (!run.ownWindow && first) await chrome.tabs.update(+first[0], { active: true });
     } else if (msg.type === 'checkUpdates') {
       return refreshConfig();
+    } else if (msg.type === 'testAlarm') {
+      await ensureSoundPlayer();
+      chrome.runtime.sendMessage({ target: 'offscreen', type: 'alarm', kind: 'new' }).catch(() => {});
+      chrome.notifications.create(`test|${Date.now()}`, {
+        type: 'basic', iconUrl: 'icons/icon128.png', priority: 2, requireInteraction: true, silent: false,
+        title: '🚨 NEW LIQUIDATION LOT (test)', message: 'This is what a new lot alert looks and sounds like.',
+      });
     } else if (msg.type === 'clearBadge') {
       chrome.action.setBadgeText({ text: '' });
     }
