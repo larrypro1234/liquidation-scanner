@@ -286,7 +286,10 @@ async function step() {
   const m = await mem();
   run.turns = (run.turns || 0) + 1;
   const every = (m.config.performance && m.config.performance.manifestEvery) || 4;
-  if (run.manifestTab != null && run.turns % every === 0 && Date.now() >= (run.manifestPausedUntil || 0)) {
+  // A brand-new lot jumps the line: the very next turn reads its manifest.
+  const rush = !!run.manifestRush;
+  if (run.manifestTab != null && (rush || run.turns % every === 0) && Date.now() >= (run.manifestPausedUntil || 0)) {
+    run.manifestRush = false;
     const asin = await pickManifestAsin();
     if (asin) return load(run.manifestTab, `https://www.amazon.com/dp/${asin}`, asin);
   }
@@ -472,6 +475,7 @@ async function handleScan(tabId, t, res) {
   if (found.length) {
     run.leads += found.length;
     m.leads = found.concat(m.leads).slice(0, MAX_LEADS);
+    if (found.some(l => l.reason === 'new')) run.manifestRush = true;
     announce(found, s);
   }
   saveMem();
